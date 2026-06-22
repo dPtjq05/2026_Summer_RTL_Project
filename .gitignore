@@ -1,0 +1,27 @@
+# ==========================================
+# Vivado Project Git Ignore Settings
+# ==========================================
+
+# 1. 비바도 프로젝트 실행파일(.xpr)과 소스폴더(.srcs)만 남기고 다 숨기기
+vivado_prj/*
+!vivado_prj/*.xpr
+!vivado_prj/*.srcs
+
+# 2. .srcs 내부에서도 자동 생성되는 임시/컴파일 결과물 제외
+vivado_prj/**/*.sim/
+vivado_prj/**/*.runs/
+vivado_prj/**/*.ip_user_files/
+vivado_prj/**/*.hw/
+vivado_prj/**/*.cache/
+vivado_prj/**/*.gen/
+
+# 3. 비바도 실행 중 생기는 로그/저널 파일 전체 제외
+*.log
+*.jou
+*.str
+.Xil/
+vcs_lib/
+xsim.dir/
+work/
+*.pb
+*.dir/
