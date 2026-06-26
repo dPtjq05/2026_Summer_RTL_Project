@@ -32,9 +32,7 @@ module uart_rx(
     // -start 감지
     // -data 저장
     // -done 신호 켜기
-    reg en_out;     //out을 해도 된다는 enable
     
-    reg [1:0] state;    //state를 어떻게 해야하지....
     
     localparam IDLE = 2'b00;
     localparam START = 2'b01;
@@ -62,18 +60,24 @@ module uart_rx(
             current_cnt_t <= 4'd0;
             current_cnt_d <= 3'd0;
             current_state <= IDLE;
+            dout <= 7'd0;
         end
         else begin
             current_state <= next_state;
             current_cnt_d <= next_cnt_d;
             current_cnt_t <= next_cnt_t;
             current_data <= next_data;
+            dout <= current_data;
         end
     
     end
     
     
     always@(*) begin
+        next_state = current_state;
+        next_cnt_t = current_cnt_t;
+        next_cnt_d = current_cnt_d;
+        next_data = current_data;
     
         case (current_state)
             IDLE: begin //1이 계속 유지된다면 대기 상태, 0으로 떨어지는 순간이 start bit가 맞는지 판단 시작
@@ -149,24 +153,21 @@ module uart_rx(
             STOP: begin     //15개의 tick을 세고 15가 되었을 때 stop이 맞는지 확인
             // +) 스탑 비트가 정상일 때 최종 출력 선에 데이터 할당
                 if (sampling_tick) begin
-                    
+                    rx_done = 1'd0;
                     if (current_cnt_t == 4'd15) begin
-                        
+                        next_cnt_t = 4'd0;
                         if (rx == 1'd1) begin
-                            en_out = 1'd1;
                             rx_done = 1'd1;
+                            next_state = IDLE;
                         end
-                        else begin
-                            en_out = 1'd0;
-                            rx_done = 1'd0;
-                        end
-
+                        
                     end
                     else begin
-                    
+                        next_cnt_t = current_cnt_t + 4'd1;  //cnt_T가 아직 가득차지 않았으면 그냥 1을 더한다.
                     end
                 
                 end
+                next_state = STOP;
             end
             
             default: next_state = IDLE;

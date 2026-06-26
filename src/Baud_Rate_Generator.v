@@ -25,7 +25,7 @@ module Baud_Rate_Generator(
     input rst_n,
     output reg sampling_tick
     );
-    reg [6:0] cnt;    //clk을 받아서 지나온 클럭의 수를 세는 신호
+    reg [9:0] cnt;    //clk을 받아서 지나온 클럭의 수를 세는 신호
     
     initial cnt <= 7'd0;
     //------------------------------------------//
@@ -33,17 +33,17 @@ module Baud_Rate_Generator(
     //매 클럭마다 카운터를 증가시킴, 만약 카운터값이 78이 되면 tick값을 1로 변경하고 다시 0으로 리셋
     always@ (posedge clk) begin
         if (!rst_n) begin
-            cnt<=7'd0;
+            cnt<=10'd0;
             sampling_tick <=1'd0;
         end
         else begin
-            if (cnt==7'd77) begin
+            if (cnt==10'd651) begin
                 sampling_tick <= 1'd1;
-                cnt<= 7'd0;
+                cnt<= 10'd0;
             end
             else begin
                 sampling_tick <= 1'd0;
-                cnt <= cnt+ 7'd1;
+                cnt <= cnt+ 10'd1;
             end
         end
     end
