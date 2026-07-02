@@ -167,7 +167,7 @@ module uart_rx(
                     end
                 
                 end
-                next_state = STOP;
+
             end
             
             default: next_state = IDLE;

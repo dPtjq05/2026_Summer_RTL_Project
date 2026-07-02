@@ -24,7 +24,7 @@ module uart_tx(
     input clk,
     input rst_n,
     input start,
-    input [7:0] data,
+    input [7:0] tx_data,
     input sampling_tick,
     
     output reg tx,
@@ -78,7 +78,7 @@ module uart_tx(
         case (current_state)
             IDLE: begin
                 if (start) begin
-                    next_reg_data = data;
+                    next_reg_data = tx_data;
                     next_state = START;
                     next_cnt_d = 3'd0;
                 end
@@ -89,11 +89,13 @@ module uart_tx(
             end
             
             START: begin
-                tx = 1'd1;
+                tx = 1'd0;
+                tx_busy = 1'd0;
                 if (sampling_tick) begin
                     if (current_cnt_t == 4'd15) begin
                         next_state = DATA;
                         next_cnt_t = 4'd0;
+                        
                     end
                     else begin
                         next_cnt_t = current_cnt_t + 4'd1;
@@ -102,10 +104,12 @@ module uart_tx(
             end
             
             DATA: begin
+                
                 tx = next_reg_data [current_cnt_d]; //-- LATCH를 방지하기 위함.
                 // 여기에 더 쓸 게 없나?
                 if(sampling_tick) begin
                     if (current_cnt_t == 4'd15) begin
+                        next_cnt_t = 4'd0;
                         if (current_cnt_d == 3'd7) begin
                             next_cnt_d = 3'd0;
                             next_state = STOP;
@@ -115,7 +119,7 @@ module uart_tx(
                         end
                     end
                     else begin
-                        next_cnt_t = current_cnt_t + 4'd15;
+                        next_cnt_t = current_cnt_t + 4'd1;
                     end
                 end
                 else begin

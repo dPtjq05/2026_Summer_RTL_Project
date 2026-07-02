@@ -3,9 +3,9 @@
 // Company: 
 // Engineer: 
 // 
-// Create Date: 2026/06/29 16:31:00
+// Create Date: 2026/07/02 14:57:24
 // Design Name: 
-// Module Name: tb_uart_tx
+// Module Name: tb_uart_top
 // Project Name: 
 // Target Devices: 
 // Tool Versions: 
@@ -20,53 +20,47 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
-module tb_uart_tx(
+module tb_uart_top(
 
     );
-    
     reg clk;
     reg rst_n;
-    wire sampling_tick;
     reg start;
-    reg [7:0] in_data;
-    wire tx;
+    reg [7:0] tx_data;
+    
     wire tx_busy;
+    wire rx_done;
+    wire dout;
     
-    Baud_Rate_Generator uut (
+    
+    uart_top dut(
     .clk(clk),
     .rst_n(rst_n),
-    .sampling_tick(sampling_tick)
-    );
-    
-    uart_tx dut (
-    .clk(clk),
-    .rst_n(rst_n),
-    .sampling_tick(sampling_tick),
     .start(start),
-    .data(in_data),
-    
-    .tx(tx),
-    .tx_busy(tx_busy)
+    .tx_data(tx_data),
+    .tx_busy(tx_busy),
+    .rx_done(rx_done),
+    .dout(dout)
     );
     
-    always #5 clk = ~clk;
     
     initial begin
         start = 1'd0;
+        tx_data = 8'd0;
         clk = 1'd0;
         rst_n = 1'd0;
-        in_data = 8'b10110010;
-        
-        @(negedge clk);
-        in_data = 8'b01001101;
-        
-        #20;
+        #200;
         
         rst_n = 1'd1;
+        tx_data = 8'b10110010;
         start = 1'd1;
+        #10;
+        start = 1'd0;
         
-        #1000000;
+        #2000000;
         $finish;
     end
+    
+    always #5 clk = ~clk;
     
 endmodule
