@@ -33,7 +33,7 @@ input [2:0] s_awprot,
 //write data channel
 input [31:0] s_wdata,
 input s_wvalid,
-input [3:0] s_wstrb,
+input [3:0] s_wstrb,        //이게 좀 복병인데,,, 데이터 중에 몇 비트를 선택해서 사용할 것인지 나타낸다. 데이터랑 같이 들어옴.
 
 //write response channel
 input s_bready,
@@ -73,6 +73,8 @@ output reg s_rresp
     reg [31:0] buf_wdata;   //내부에 저장해둘 buffer.
     reg [31:0] buf_awaddr;
     
+    reg [3:0] buf_wstrb; //wstrb를 저장해둘 buffer 추가.
+    
     localparam WIDLE = 2'b00;
     localparam DWAIT = 2'b01;
     localparam AWAIT = 2'b10;
@@ -96,6 +98,7 @@ output reg s_rresp
                 WIDLE: begin
                     if (s_wvalid && s_wready) begin
                         buf_wdata <= s_wdata;
+                        buf_wstrb <= s_wstrb;
                     end
                     
                     if (s_awvalid && s_awready) begin
@@ -103,13 +106,68 @@ output reg s_rresp
                     end
                 end
                 
-                DWAIT: begin    //address는 확보함, data를 기다리는 상태.
+                DWAIT: begin    //address는 확보함, data를 기다리는 상태.--주소를 미리 저장해두고 있음.
                     if (s_wvalid && s_wready) begin
                         case (buf_awaddr[3:2])
-                            2'b00: dummy0 <= s_wdata;
-                            2'b01: dummy1 <= s_wdata;
-                            2'b10: dummy2 <= s_wdata;
-                            2'b11: dummy3 <= s_wdata;
+                            2'b00: begin
+                                if (s_wstrb[0]) dummy0[7:0] <= s_wdata[7:0];
+                                if (s_wstrb[1]) dummy0[15:8] <= s_wdata[15:8];
+                                if (s_wstrb[2]) dummy0[23:16] <= s_wdata[23:16];
+                                if (s_wstrb[3]) dummy0[31:24] <= s_wdata[31:24];
+                            end
+                            2'b01: begin
+                                if (s_wstrb[0]) dummy1[7:0] <= s_wdata[7:0];
+                                if (s_wstrb[1]) dummy1[15:8] <= s_wdata[15:8];
+                                if (s_wstrb[2]) dummy1[23:16] <= s_wdata[23:16];
+                                if (s_wstrb[3]) dummy1[31:24] <= s_wdata[31:24];
+                            end
+                            
+                            2'b10: begin
+                                if (s_wstrb[0]) dummy2[7:0] <= s_wdata[7:0];
+                                if (s_wstrb[1]) dummy2[15:8] <= s_wdata[15:8];
+                                if (s_wstrb[2]) dummy2[23:16] <= s_wdata[23:16];
+                                if (s_wstrb[3]) dummy2[31:24] <= s_wdata[31:24];
+                            end
+                            2'b11:begin
+                                if (s_wstrb[0]) dummy3[7:0] <= s_wdata[7:0];
+                                if (s_wstrb[1]) dummy3[15:8] <= s_wdata[15:8];
+                                if (s_wstrb[2]) dummy3[23:16] <= s_wdata[23:16];
+                                if (s_wstrb[3]) dummy3[31:24] <= s_wdata[31:24];
+                            end
+                        endcase
+                    end
+                end
+                
+                AWAIT: begin        //주소를 기다린다. 그러니까 데이터는 버퍼에 있다. 주소가 들어오는 타이밍에 버퍼가 아닌 주소 wire에서 가져와야 한다.
+                    if (s_awvalid && s_awready) begin
+                        case (s_awaddr[3:2])
+                            2'b00: begin
+                                if (buf_wstrb[0]) dummy0[7:0] <= buf_wdata[7:0];
+                                if (buf_wstrb[1]) dummy0[15:8] <= buf_wdata[15:8];
+                                if (buf_wstrb[2]) dummy0[23:16] <= buf_wdata[23:16];
+                                if (buf_wstrb[3]) dummy0[31:24] <= buf_wdata[31:24];
+                            end
+                            
+                            2'b01: begin
+                                if (buf_wstrb[0]) dummy1[7:0] <= buf_wdata[7:0];
+                                if (buf_wstrb[1]) dummy1[15:8] <= buf_wdata[15:8];
+                                if (buf_wstrb[2]) dummy1[23:16] <= buf_wdata[23:16];
+                                if (buf_wstrb[3]) dummy1[31:24] <= buf_wdata[31:24];
+                            end
+                            
+                            2'b10: begin
+                                if (buf_wstrb[0]) dummy2[7:0] <= buf_wdata[7:0];
+                                if (buf_wstrb[1]) dummy2[15:8] <= buf_wdata[15:8];
+                                if (buf_wstrb[2]) dummy2[23:16] <= buf_wdata[23:16];
+                                if (buf_wstrb[3]) dummy2[31:24] <= buf_wdata[31:24];
+                            end
+                            
+                            2'b11: begin
+                                if (buf_wstrb[0]) dummy3[7:0] <= buf_wdata[7:0];
+                                if (buf_wstrb[1]) dummy3[15:8] <= buf_wdata[15:8];
+                                if (buf_wstrb[2]) dummy3[23:16] <= buf_wdata[23:16];
+                                if (buf_wstrb[3]) dummy3[31:24] <= buf_wdata[31:24];
+                            end
                         endcase
                     end
                 end
@@ -145,7 +203,7 @@ output reg s_rresp
                 end
             end
             
-            DWAIT: begin
+            DWAIT: begin        //주소 확보, 데이터 기다림--- 주소를 버퍼에 저장, 
                 s_awready = 1'd0;
                 if (s_wready && s_wvalid) begin
                     w_next_state = WRESP;
@@ -154,11 +212,16 @@ output reg s_rresp
             
             AWAIT: begin
                 s_wready = 1'd0;
+                if (s_awready && s_awvalid) begin
+                    w_next_state = WRESP;
+                end
             end
             
             WRESP: begin
-                s_wready = 1'd0;
-                s_awready = 1'd0;
+                s_wready = 1'd1;
+                s_awready = 1'd1;
+                
+                
             end
             
         endcase
