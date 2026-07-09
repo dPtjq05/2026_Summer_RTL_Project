@@ -139,3 +139,26 @@
 
 2. **독립 채널의 병렬 처리 (Parallel Processing)**
    * AXI 프로토콜의 대원칙인 '주소/데이터 채널의 독립성'을 보장하기 위해, 순차 회로 내부에서 `if-else if` 구조의 불필요한 우선순위 로직(Priority Logic)을 걷어내고 독립된 2개의 `if`문으로 병렬 배치했습니다. 이를 통해 불필요한 합성 면적을 줄이고 물리적으로 완벽히 독립된 클럭 인에이블(Clock Enable) 제어 루프를 형성했습니다.
+
+---
+
+### 📅 2026.07.09 (Milestone: Write Strobe Masking & State Logic Refinement)
+
+#### 1. 구현 내용 (Key Features)
+- **AXI4-Lite Slave 쓰기 데이터 스트롭(wstrb) 제어 로직 구현**
+  - 32-bit 데이터 버스(`s_wdata`) 내에서 유효한 바이트 레인(Byte Lane)만 선택적으로 목적지 레지스터에 업데이트하는 바이트 단위 마스킹 회로 정립.
+- **쓰기 채널 4-State FSM 대기 상태(Wait State) 고도화**
+  - 주소가 지각하는 상황(`WADDR_WAIT`)과 데이터가 지각하는 상황(`WDATA_WAIT`)에서 데이터 유실 및 레지스터 오염을 원천 차단하는 제어 경로(Control Path) 설계.
+
+#### 2. 기술적 도전 및 트러블슈팅 (Architectural Challenges & Solutions)
+- **문제 정의 (쓰레기 값 오염 리스크):** 
+  데이터 채널이 주소 채널보다 먼저 활성화되어 `WADDR_WAIT` 상태로 진입할 때, 일부 바이트만 유효한 상태(`wstrb`가 특정 비트만 켜진 경우)에서 나머지 상위 바이트의 가비지 데이터가 임시 버퍼에 남아, 추후 지각한 주소가 도착했을 때 진짜 레지스터의 멀쩡한 데이터를 파괴할 수 있는 타이밍 함정 식별.
+- **해결 방안 (스트롭 버퍼 및 일관된 데이터 흐름 설계):**
+  - 데이터 버퍼(`buf_wdata`)와 쌍을 이루는 4-bit 스트롭 버퍼 레지스터(`buf_wstrb`)를 추가 도입하여 데이터가 먼저 도착하는 시점의 바이트 유효 신분증을 주소가 올 때까지 안전하게 래치(Latch)하도록 구조 변경.
+  - 이를 통해 두 대기 상태(`WDATA_WAIT`, `WADDR_WAIT`)에서 **'Outer `case` (주소 디코딩) + Inner 4-`if` (바이트 스트롭 매핑)'**라는 구조적 일관성(Structural Consistency)을 확보하여 데칼코마니 형태의 대칭 회로 유도 성공.
+
+#### 3. 하드웨어 최적화 관점 (Synthesis & PPA Optimization)
+- **Clock Enable (CE) 핀 직결 최적화:** 
+  스트롭 조건 분기를 이중 `case`문 대신 4개의 독립된 `if`문 구조로 배치함으로써, 합성기(Synthesizer)가 데이터 경로(Data Path) 전선 상에 불필요한 거대 Mux 트리를 생성하는 것을 방지. 주소 디코딩 결과와 `wstrb[N]` 신호가 플립플롭의 물리적 `CE` / `WE` 핀에 최적의 조합 논리(AND Gate 단수 최소화)로 직결되도록 유도.
+- **Critical Path 딜레이 최소화:** 
+  데이터 입력(D)으로 들어가는 경로의 게이트 레벨(Gate Level)을 극적으로 다이어트하여 Propagation Delay를 최소화했으며, 이는 고속 동작 주파수($F_{max}$) 환경에서도 타이밍 마진을 안정적으로 사수할 수 있는 튼튼한 회로 구조임을 확인.
