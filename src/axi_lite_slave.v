@@ -52,7 +52,7 @@ output reg s_wready,
 output reg s_bvalid,
 output reg s_bresp,
 
-output reg s_arrready,
+output reg s_arready,
 
 output reg s_rvalid,
 output reg s_rdata,
@@ -79,6 +79,7 @@ output reg s_rresp
     localparam DWAIT = 2'b01;
     localparam AWAIT = 2'b10;
     localparam WRESP = 2'b11;
+    //이렇게 d,a wait을 나눈 이유는 이렇게 나눠야 로직을 더 단순하게 짤 수 있음. 그냥 하나의 wait으로 짜면 combinational logic의 case문을 짤 때 과도하게 복잡한 코드를 짜야함.
     
     localparam RIDLE = 1'b0;
     localparam READ = 1'b1;
@@ -170,8 +171,11 @@ output reg s_rresp
                             end
                         endcase
                     end
-                end
                 
+                end
+                WRESP: begin
+                    
+                end
             endcase
         end
     end
@@ -207,6 +211,8 @@ output reg s_rresp
                 s_awready = 1'd0;
                 if (s_wready && s_wvalid) begin
                     w_next_state = WRESP;
+                    s_bvalid = 1'd1;
+                    s_bresp =1'd1;
                 end
             end
             
@@ -214,14 +220,24 @@ output reg s_rresp
                 s_wready = 1'd0;
                 if (s_awready && s_awvalid) begin
                     w_next_state = WRESP;
+                    s_bvalid = 1'd1;
+                    s_bresp =1'd1;
                 end
             end
             
             WRESP: begin
                 s_wready = 1'd1;
                 s_awready = 1'd1;
-                
-                
+                s_bresp = 1'd1;
+                s_bvalid = 1'd1;
+                if (s_bready) begin //sequential logic으로 짜면 좀 더 안전한 타이밍 설계를 할 수 있지만 처음에 설계할 때 이 resp 상태를 고려하지 않은 구조로 짜서 그냥 combi로 짬.
+                    w_next_state = WIDLE;
+                    s_bvalid = 1'd0;
+                    s_bresp = 1'd0;
+                end
+                else begin
+                    w_next_state = WRESP;
+                end
             end
             
         endcase
