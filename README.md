@@ -102,7 +102,7 @@
 
 ---
 
-## 📅 진행 상황: 2026년 7월 9일 (목) - 오늘
+## 📅 진행 상황: 2026년 7월 9일 (목)
 
 ### 🎯 오늘 달성한 목표
 - AXI4-Lite Slave 쓰기 데이터 스트롭(`wstrb`) 제어 로직 설계 및 구현 완료.
@@ -118,3 +118,23 @@
   * 스트롭 변수의 16가지 유효 조합을 이중 `case`문으로 설계할 경우 발생하는 조합 논리 게이트의 폭발적 증가와 타이밍 패널티 문제를 인지.
   * 큰 갈래는 주소 `case`문으로 묶되, 내부 사물함 제어는 **4개의 독립된 바이트 단위 `if`문**으로 수평 배치함.
   * 이를 통해 합성기(Synthesizer)가 데이터 경로상에 불필요한 거대 Mux 트리를 생성하는 것을 방지하고, 주소 디코딩 결과와 스트롭 신호가 플립플롭의 물리적 쓰기 제어 핀(`CE` / `WE`)에 최단 거리로 직결되도록 유도함. 결과적으로 임계 경로(Critical Path) 딜레이를 최소화하여 최대 동작 주파수($F_{max}$) 마진을 극적으로 사수함.
+
+---
+## 📝 7월 17일: Register Map 및 AXI4-Lite Slave IP 설계
+
+### 1. Write Channel FSM 및 Zero-Latency Write 아키텍처
+
+- **FSM State 구조**: `WIDLE` ➡️ `WADDR_WAIT` / `WDATA_WAIT` ➡️ `WRESP` 단계로 세분화하여 주소와 데이터가 비동기적으로 도착하는 예외 상황 통제.
+- **Zero-Latency Write**: 일반적인 1-Clock Delay 버퍼링 기입 대신, 주소 및 데이터 핸드셰이크가 완료되어 `WRESP`로 전이하는 상승 에지(Edge) 순간에 내부 Register File(`slv_reg_0`~`3`)에 즉시 쓰기를 완료하는 최적화 구현.
+- **Write Response (WRESP) 제어**: 대기 상태가 아닌 `WRESP` 상태 내부에서 마스터의 `s_bready` 신호를 확인하고 동기식으로 `s_bvalid` 신호를 릴리즈하여 완벽한 버스 릴레이션 및 데드락 방지 보장.
+
+### 2. Read Channel 설계 및 독립 채널 구조 (Split Transaction) 분석
+
+- **FSM State 구조**: 주소를 처리하는 `RIDLE` 상태와 데이터를 반환하는 `RDATA` 상태의 초간결 2-State FSM 구조 확립.
+- **독립 채널 구조 (Decoupled Channels)**: AXI 프로토콜 스펙에 의거하여 AR(Address Read) 채널과 R(Read Data) 채널을 완전 비동기로 분리 설계.
+- **Latency 은닉 및 버스 효율 최적화**: 주소 캡처와 데이터 출력을 분리하여 물리적 메모리 읽기 지연(Latency)을 은닉하고, 마스터가 데이터를 채가기 전 다음 주소를 선입력받을 수 있는 파이프라이닝(Outstanding) 대역폭 확보.
+
+### 3. 하드웨어 타이밍 마진 및 검증 포인트
+
+- **2-Block FSM 스타일**: 조합회로(`always @(*)`)와 순차회로(`always @(posedge clk)`)의 역할을 철저히 이원화하여 합성기(Synthesizer)의 래치(Latch) 생성을 원천 차단.
+- **Registered Output 의사결정**: 버스 출력 신호(`s_bvalid`, `s_bresp`)를 제어할 때 조합회로 출력과 물리적 D-FF(Registered) 출력의 정적 타이밍 분석(STA) 관점에서의 $T_{co}$ 마진 및 글리치(Glitch) 차단 효과 분석 완료.
