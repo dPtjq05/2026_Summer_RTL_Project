@@ -67,13 +67,16 @@ output reg s_rresp
     reg [1:0] w_current_state;
     reg [1:0] w_next_state;
     
-    reg [1:0] r_current_state;
-    reg [1:0] r_next_state;
+    reg r_current_state;
+    reg r_next_state;
     
     reg [31:0] buf_wdata;   //내부에 저장해둘 buffer.
     reg [31:0] buf_awaddr;
     
     reg [3:0] buf_wstrb; //wstrb를 저장해둘 buffer 추가.
+    
+    reg [31:0] buf_araddr;
+    reg [31:0] buf_rdata;
     
     localparam WIDLE = 2'b00;
     localparam DWAIT = 2'b01;
@@ -81,7 +84,7 @@ output reg s_rresp
     localparam WRESP = 2'b11;
     //이렇게 d,a wait을 나눈 이유는 이렇게 나눠야 로직을 더 단순하게 짤 수 있음. 그냥 하나의 wait으로 짜면 combinational logic의 case문을 짤 때 과도하게 복잡한 코드를 짜야함.
     
-    localparam RIDLE = 1'b0;
+    localparam RIDLE = 1'b0;    //read는 두가지 상태만으로 구현할 수 있음
     localparam READ = 1'b1;
     // read, write의 병렬 처리로 좀 더 효율적이라고는 하는데 이게 왜 효율적인 거지?--wire 선언을 추가해서 합성이나 연산이 더 빠르게 일어나도록 할 수 있음.
 
@@ -89,6 +92,10 @@ output reg s_rresp
         if (!s_arst_n) begin
             w_current_state <= WIDLE;
             r_current_state <= RIDLE;
+            
+            buf_wdata <= 32'd0;
+            buf_awaddr <= 32'd0;
+            buf_wstrb <= 4'd0;
             
         end
         else begin
@@ -103,7 +110,7 @@ output reg s_rresp
                     end
                     
                     if (s_awvalid && s_awready) begin
-                        buf_awaddr <= s_awaddr;
+                        buf_awaddr <= s_araddr;
                     end
                 end
                 
@@ -177,6 +184,20 @@ output reg s_rresp
                     
                 end
             endcase
+            
+            case (r_current_state) 
+                RIDLE: begin
+                    if (s_arready && s_arvalid) begin
+                        buf_araddr <= s_araddr;
+                    end
+                end
+                
+                READ: begin
+                    s_rdata <= buf_rdata;
+                    
+                end
+            
+            endcase
         end
     end
     
@@ -241,7 +262,31 @@ output reg s_rresp
             end
             
         endcase
-    
+        case (r_current_state)
+            RIDLE: begin
+                s_arready =1'd1;
+                s_rvalid = 1'd0;
+                
+                if (s_arready && s_arvalid) begin
+                    buf_araddr = s_araddr;
+                    r_next_state = READ;
+                end
+            end
+            
+            READ: begin
+                s_arready = 1'd0;
+                s_rvalid = 1'd1;
+                
+                if (s_rvalid && s_rready) r_next_state = RIDLE;
+                case (buf_araddr[3:2])
+                    2'b00: buf_rdata = dummy0;
+                    2'b01: buf_rdata = dummy1;
+                    2'b10: buf_rdata = dummy2;
+                    2'b11: buf_rdata = dummy3;
+                endcase
+            end
+            
+        endcase
     end
     
 endmodule
