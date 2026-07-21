@@ -138,3 +138,24 @@
 
 - **2-Block FSM 스타일**: 조합회로(`always @(*)`)와 순차회로(`always @(posedge clk)`)의 역할을 철저히 이원화하여 합성기(Synthesizer)의 래치(Latch) 생성을 원천 차단.
 - **Registered Output 의사결정**: 버스 출력 신호(`s_bvalid`, `s_bresp`)를 제어할 때 조합회로 출력과 물리적 D-FF(Registered) 출력의 정적 타이밍 분석(STA) 관점에서의 $T_{co}$ 마진 및 글리치(Glitch) 차단 효과 분석 완료.
+
+---
+## 📝 7월 21일: AXI4-Lite Slave Testbench 구축 및 Write Channel Corner Case 검증
+
+### 1. Task 기반 BFM Testbench 아키텍처 및 모듈화
+
+- **Task 기반 BFM(Bus Functional Model) 아키텍처**: AXI4-Lite 트랜잭션을 제어하는 신호 구동 로직을 독립된 `task` 구문으로 분리 및 모듈화하여, 테스트벤치 코드 가독성 극대화 및 재사용 가능한 Verification Driver 구축.
+- **Self-Checking 자동화 검증**: 시뮬레이션 파형(Waveform)을 일일이 확인하는 대신, Task 내부에서 `s_axi_bresp` 신호 및 읽기 데이터를 수치 검증하여 `$display` / `$error`로 결과를 자동 출력하는 Self-checking 메커니즘 내장.
+- **5단계 정석 Testbench 파이프라인**: Timescale/신호 선언 ➡️ Clock/Reset 생성 ➡️ DUT 인스턴스화 ➡️ Driver Task 정의 ➡️ Scenario 실행의 5단계 정석 구조를 적용하여 시뮬레이션 환경의 높은 신뢰성 확보.
+
+### 2. Write 채널 타이밍 코너 케이스 (3가지 비동기 시나리오) 검증
+
+- **동시 주입 시나리오 (Simultaneous Write)**: 동일한 클럭 에지에서 `s_axi_awvalid`와 `s_axi_wvalid`를 동시 Assert하여, 슬레이브의 표준 핸드셰이크 처리 및 정상 기입 동작 검증.
+- **주소 선행 주입 시나리오 (Address-First Write)**: `s_axi_awvalid` 주입 후 `repeat (3) @(posedge clk)` 구문을 활용해 3클럭 지연(Delay)을 발생시킨 뒤 `s_axi_wvalid`를 주입하여, 슬레이브 내부 주소 버퍼링 및 데이터 대기 FSM 동작 검증.
+- **데이터 선행 주입 시나리오 (Data-First Write)**: `s_axi_wvalid`를 먼저 주입하고 3클럭 지연 후 `s_axi_awvalid`를 주입하여, 데이터 사전 버퍼링 및 주소 도착 순간 즉시 쓰기가 완결되는 비동기 독립 채널 수거 동작 완벽 입증.
+
+### 3. 병렬 수거(`fork...join`) 및 하드웨어 타이밍 동기화
+
+- **`fork...join` 병렬 스레드 구동**: 물리적으로 분리된 AW 채널과 W 채널의 핸드셰이크 수거 로직을 독립 스레드로 동시 실행하여, 슬레이브의 `ready` 응답 순서에 구애받지 않고 데드락(Deadlock) 없이 안전하게 핸드셰이크 완결.
+- **Level/Edge 2단계 동기화 메커니즘**: `wait(ready)`를 통한 전압 레벨(Level) 감지 후, `@(posedge clk)`를 결합해 슬레이브 플립플롭이 데이터를 완전히 캡처(Latch)하는 상승 에지 시점까지 명시적으로 대기하는 정석 동기화 구현.
+- **레이스 컨디션(Race Condition) 차단**: 클럭 에지 직후 Non-blocking 연산자(`<= 1'b0`)를 사용해 `s_axi_valid` 신호를 Deassert함으로써, 시뮬레이터 상의 경쟁 상태 버그를 차단하고 실제 하드웨어의 $T_{su}$ / $T_{h}$ (Setup/Hold Time) 타임라인 동작을 정확히 모사.
