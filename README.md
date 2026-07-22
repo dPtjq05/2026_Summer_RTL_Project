@@ -159,3 +159,19 @@
 - **`fork...join` 병렬 스레드 구동**: 물리적으로 분리된 AW 채널과 W 채널의 핸드셰이크 수거 로직을 독립 스레드로 동시 실행하여, 슬레이브의 `ready` 응답 순서에 구애받지 않고 데드락(Deadlock) 없이 안전하게 핸드셰이크 완결.
 - **Level/Edge 2단계 동기화 메커니즘**: `wait(ready)`를 통한 전압 레벨(Level) 감지 후, `@(posedge clk)`를 결합해 슬레이브 플립플롭이 데이터를 완전히 캡처(Latch)하는 상승 에지 시점까지 명시적으로 대기하는 정석 동기화 구현.
 - **레이스 컨디션(Race Condition) 차단**: 클럭 에지 직후 Non-blocking 연산자(`<= 1'b0`)를 사용해 `s_axi_valid` 신호를 Deassert함으로써, 시뮬레이터 상의 경쟁 상태 버그를 차단하고 실제 하드웨어의 $T_{su}$ / $T_{h}$ (Setup/Hold Time) 타임라인 동작을 정확히 모사.
+
+---
+
+## 📝 07월 22일: AXI4-Lite Write BFM 고도화 및 Deadlock 방지 검증 환경 구축
+
+### 1. B Channel (Write Response) 핸드셰이크 통합
+* **기능 구현:** AXI4-Lite Complete Write Transaction 완성을 위해 `BVALID` 수신 감지 및 `BREADY` 펄스 제어 로직 추가
+* **프로토콜 준수:** `AW`/`W` 핸드셰이크 완료 ➔ `BVALID` 대기 ➔ `BREADY` 응답 전송 순서를 보장하여 AXI4-Lite 의존성 규격 성립
+
+### 2. Watchdog 타이머 기반 Deadlock (Simulation Hang) 방지
+* **문제 배경:** RTL 버그로 인해 `ready`/`valid` 신호가 미출력될 경우 시뮬레이터가 `wait()` 구문에 무한히 갇히는 현상 차단 필요
+* **개선 사항:** `fork...join_any` 구조 기반의 100-clock Watchdog 타이머 스레드를 구축하여, 타임아웃 발생 시 에러 출력 및 신호 초기화 (`valid=0`, `ready=0`) 후 안전 탈출
+
+### 3. SystemVerilog (`.sv`) 마이그레이션 & 클럭 동기화
+* **환경 전환:** `fork...join_any` 및 `disable fork` 등 고급 검증 키워드 활용을 위해 테스트벤치 환경을 SystemVerilog(`.sv`)로 전환
+* **타이밍 안정성:** Task 호출 시점의 `@(posedge clk)` 클럭 엣지 동기화를 적용하여 Race Condition 방지
