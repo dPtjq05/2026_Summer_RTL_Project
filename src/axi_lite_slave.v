@@ -93,6 +93,18 @@ output reg s_rresp
             w_current_state <= WIDLE;
             r_current_state <= RIDLE;
             
+            s_awready <= 1'd0;
+            s_wready <= 1'd0;
+            
+            s_bvalid <= 1'd0;
+            s_bresp <= 1'd0;
+            
+            s_arready <= 1'd0;
+            
+            s_rvalid <= 1'd0;
+            s_rdata <= 1'd0;
+            s_rresp <= 1'd0;
+            
             buf_wdata <= 32'd0;
             buf_awaddr <= 32'd0;
             buf_wstrb <= 4'd0;
@@ -101,7 +113,9 @@ output reg s_rresp
         else begin
             w_current_state <= w_next_state;
             r_current_state <= r_next_state;
-            
+            s_bvalid <= 1'd0;   //fix: combinational logic에 적으면 덮어쓰기 오류가 나서 sequential logic으로 구현함.
+            s_bresp <= 1'd0;
+        
             case (w_current_state)
                 WIDLE: begin
                     if (s_wvalid && s_wready) begin
@@ -110,7 +124,7 @@ output reg s_rresp
                     end
                     
                     if (s_awvalid && s_awready) begin
-                        buf_awaddr <= s_araddr;
+                        buf_awaddr <= s_awaddr;
                     end
                 end
                 
@@ -180,8 +194,15 @@ output reg s_rresp
                     end
                 
                 end
-                WRESP: begin
-                    
+                WRESP: begin    //fix: delta cycle error를 방지 하기 위해서 bvalid, bresp 신호를 sequential logic으로 바꿈.
+                    if (s_bready && s_bvalid) begin
+                        s_bvalid <= 1'd0;
+                        s_bresp <= 1'd0;
+                    end
+                    else begin
+                        s_bvalid <= 1'd1;
+                        s_bresp <= 1'd1;
+                    end
                 end
             endcase
             
@@ -207,8 +228,6 @@ output reg s_rresp
         
         s_wready = 1'd0;
         s_awready = 1'd0;
-        s_bvalid = 1'd0;
-        s_bresp = 1'd0;
         
         case (w_current_state)
             WIDLE: begin
@@ -247,14 +266,11 @@ output reg s_rresp
             end
             
             WRESP: begin
-                s_wready = 1'd1;
-                s_awready = 1'd1;
-                s_bresp = 1'd1;
-                s_bvalid = 1'd1;
+                s_wready = 1'd0;    //fix: resp 과정 중에는 ready를 꺼야 함. 1로 계속 두면 잘못된 handshake가 발생할 수도 있음.
+                s_awready = 1'd0;
                 if (s_bready) begin //sequential logic으로 짜면 좀 더 안전한 타이밍 설계를 할 수 있지만 처음에 설계할 때 이 resp 상태를 고려하지 않은 구조로 짜서 그냥 combi로 짬.
                     w_next_state = WIDLE;
-                    s_bvalid = 1'd0;
-                    s_bresp = 1'd0;
+                    
                 end
                 else begin
                     w_next_state = WRESP;
