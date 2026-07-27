@@ -175,3 +175,19 @@
 ### 3. SystemVerilog (`.sv`) 마이그레이션 & 클럭 동기화
 * **환경 전환:** `fork...join_any` 및 `disable fork` 등 고급 검증 키워드 활용을 위해 테스트벤치 환경을 SystemVerilog(`.sv`)로 전환
 * **타이밍 안정성:** Task 호출 시점의 `@(posedge clk)` 클럭 엣지 동기화를 적용하여 Race Condition 방지
+
+---
+
+## 📝 07월 27일: AXI4-Lite Slave B Channel FSM 디버깅 및 Delta Cycle Glitch 해결
+
+### 1. Delta Cycle (0ns Glitch) 및 Pre-asserted BREADY Overwrite 분석
+* **문제 현상:** Testbench의 `wait(bvalid)` 구문은 통과하여 `bready`가 1로 전환되었으나, Waveform 창에서는 `bvalid`가 계속 0으로 표시되는 유령 신호 현상 발생
+* **원인 규명:** Master가 `bready=1`을 미리 유지(Pre-assertion)한 상태에서, Non-blocking 할당(`<=`) 및 FSM 조건 판단이 엇갈려 동일 타임스탬프(Delta Cycle) 내에 `bvalid`가 1로 평가된 즉시 0으로 덮어씌워짐 (Waveform에는 최종 Settled Value인 0만 렌더링됨)
+
+### 2. 2-Block FSM 구조 개편 및 BVALID 래치 보장
+* **순차 논리 제어:** `bvalid` 및 `bresp` 제어를 `always_ff` 블록 내 레지스터 래치 구조로 완전 전환하여, 핸드셰이크 전까지 최소 1클럭 동안 신호 High 상태가 단단하게 유지되도록 보장
+* **상태 전이(Next State) 조건 수정:** Master가 `bready=1`을 미리 올리고 있더라도 `s_bvalid`가 실제 1로 올라오기 전까지 FSM이 `WRESP` 상태에 머물도록 `always_comb` 내 탈출 조건을 `(s_bvalid && s_bready)`로 엄격화
+
+### 3. AXI4-Lite Write Transaction 최종 검증
+* **프로토콜 검증:** Handshake 시점에 AXI4-Lite 표준 정상 완료 코드인 `BRESP = 2'b00` (OKAY)이 정상 전달됨을 확인
+* **파형 검증:** 45ns~55ns 클럭 구간에서 `bvalid=1`과 `bready=1`이 동시 성립하는 1-clock Handshake 펄스가 Waveform상에 차분하게 렌더링되며 Complete Write Transaction 성공
