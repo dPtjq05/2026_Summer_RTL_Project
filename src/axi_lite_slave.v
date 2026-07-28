@@ -117,15 +117,45 @@ output reg s_rresp
             s_bresp <= 1'd0;
         
             case (w_current_state)
-                WIDLE: begin
-                    if (s_wvalid && s_wready) begin
-                        buf_wdata <= s_wdata;
-                        buf_wstrb <= s_wstrb;
+                WIDLE: begin    //동시에 handshake가 발생하는 선행 조건을 추가해서 데이터를 버퍼에 저장하지 않고 바로 들어가도록 설계.
+                    if (s_wvalid && s_wready && s_awvalid && s_awready) begin
+                        case (s_awaddr[3:2])
+                            2'b00: begin
+                                if (s_wstrb[0]) dummy0[7:0] <= s_wdata[7:0];
+                                if (s_wstrb[1]) dummy0[15:8] <= s_wdata[15:8];
+                                if (s_wstrb[2]) dummy0[23:16] <= s_wdata[23:16];
+                                if (s_wstrb[3]) dummy0[31:24] <= s_wdata[31:24];
+                            end
+                            2'b01: begin
+                                if (s_wstrb[0]) dummy1[7:0] <= s_wdata[7:0];
+                                if (s_wstrb[1]) dummy1[15:8] <= s_wdata[15:8];
+                                if (s_wstrb[2]) dummy1[23:16] <= s_wdata[23:16];
+                                if (s_wstrb[3]) dummy1[31:24] <= s_wdata[31:24];
+                            end
+                            
+                            2'b10: begin
+                                if (s_wstrb[0]) dummy2[7:0] <= s_wdata[7:0];
+                                if (s_wstrb[1]) dummy2[15:8] <= s_wdata[15:8];
+                                if (s_wstrb[2]) dummy2[23:16] <= s_wdata[23:16];
+                                if (s_wstrb[3]) dummy2[31:24] <= s_wdata[31:24];
+                            end
+                            2'b11:begin
+                                if (s_wstrb[0]) dummy3[7:0] <= s_wdata[7:0];
+                                if (s_wstrb[1]) dummy3[15:8] <= s_wdata[15:8];
+                                if (s_wstrb[2]) dummy3[23:16] <= s_wdata[23:16];
+                                if (s_wstrb[3]) dummy3[31:24] <= s_wdata[31:24];
+                            end
+                        endcase
                     end
-                    
-                    if (s_awvalid && s_awready) begin
-                        buf_awaddr <= s_awaddr;
-                    end
+                    else
+                        if (s_wvalid && s_wready) begin
+                            buf_wdata <= s_wdata;
+                            buf_wstrb <= s_wstrb;
+                        end
+                        
+                        if (s_awvalid && s_awready) begin
+                            buf_awaddr <= s_awaddr;
+                        end
                 end
                 
                 DWAIT: begin    //address는 확보함, data를 기다리는 상태.--주소를 미리 저장해두고 있음.
@@ -226,14 +256,15 @@ output reg s_rresp
         r_next_state = r_current_state;
         w_next_state = w_current_state;
         
-        s_wready = 1'd0;
-        s_awready = 1'd0;
+        s_wready = 1'd1;
+        s_awready = 1'd1;
         
         case (w_current_state)
             WIDLE: begin
                 s_wready = 1'b1;
                 s_awready = 1'b1;
                 if (s_wvalid && s_awvalid) begin
+                    
                     w_next_state = WRESP;   //대기 상태로 넘어갈 필요 없이 바로 RESP로 넘어간다.
                 end
                 else if (s_wvalid) begin    //data만 들어오고 주소 기다리는 경우
@@ -251,8 +282,7 @@ output reg s_rresp
                 s_awready = 1'd0;
                 if (s_wready && s_wvalid) begin
                     w_next_state = WRESP;
-                    s_bvalid = 1'd1;
-                    s_bresp =1'd1;
+                  
                 end
             end
             
@@ -260,8 +290,7 @@ output reg s_rresp
                 s_wready = 1'd0;
                 if (s_awready && s_awvalid) begin
                     w_next_state = WRESP;
-                    s_bvalid = 1'd1;
-                    s_bresp =1'd1;
+                    // 이렇게 조건문 안에서 다음 state를 멋대로 예상해서 ready, valid 신호를 변경하면 타이밍이 어긋난다.
                 end
             end
             

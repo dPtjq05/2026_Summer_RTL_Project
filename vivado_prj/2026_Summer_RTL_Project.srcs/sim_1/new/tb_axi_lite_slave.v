@@ -88,10 +88,12 @@ module tb_axi_lite_slave(
         clk <= 1'd0;
         rst_n <= 1'd0;
         #20
+        bready <= 1'd0;
         rst_n <= 1'd1;
         
         $display("[%0t ns] task started", $time);
-        commoncase(32'd4, 32'd8);
+        data_first(32'd4, 32'd8);
+        //commoncase (32'd4, 32'd8);
         $display("[%0t ns] task finished", $time);
         $finish;
     end
@@ -112,6 +114,7 @@ module tb_axi_lite_slave(
             awvalid <= 1'd1;
             wvalid  <= 1'd1;
             bready <= 1'd0;
+            wstrb <= 4'b1110;
         
             fork
                 begin
@@ -134,6 +137,7 @@ module tb_axi_lite_slave(
                     bready <= 1'd1;
                     @(posedge clk);
                     bready <= 1'd0;
+                    repeat(3) @(posedge clk);
                 end
                 begin
                     repeat(100) @(posedge clk);
@@ -164,43 +168,51 @@ module tb_axi_lite_slave(
     );
         reg df_flag;
         begin
-        
-            df_flag <= 1'd0;
-            @(posedge clk); //clk 동기화.
-            wdata <= tb_wdata;
-            repeat (3) @(posedge clk);
-            awaddr <= tb_awaddr;
+            df_flag = 0;
+            wstrb <= 4'b1110;
             
-            fork
-            
-                begin   //여기에는 원래 동작들
+            //아 시발 진짜 3클럭 지연 뒤에 wready를 기다리느라 그런 거 같은데, 아 나 에미 시발 ㅈ같은 거진
+            fork//fix: common case와는 달리 3clk지연 뒤에 ready를 기다리니까 무한 대기에 걸린 거 같음
+                begin
                     fork
                         begin
-                            wait(awready);
+                            repeat(3) @(posedge clk);
+                            awvalid <= 1'd1;
+                            awaddr <= tb_awaddr;
+                            
+                            wait(awvalid && awready);
                             @(posedge clk);
                             awvalid <= 1'd0;
                         end
                         begin
-                            wait(wready);
+                            @(posedge clk);
+                            wdata <= tb_wdata;
+                            wvalid <= 1'd1;
+                            
+                            wait(wready && wvalid);
                             @(posedge clk);
                             wvalid <= 1'd0;
                         end
-                        
-                        wait(bvalid);
-                        bready <= 1'd1;
-                        @(posedge clk);
-                        bready <= 1'd0;
                     join
+        
+                    wait(bvalid==1'd1);
+                    @(posedge clk);
+                    bready <= 1'd1;
+                        
+                    wait(bvalid && bready);
+                    @(posedge clk);
+                    bready <= 1'd0;
+                    
+                    repeat(3) @(posedge clk);
                 end
                 begin
                     repeat(100) @(posedge clk);
-                    df_flag <= 1'd1;
+                    df_flag = 1; // 100 클럭이 지날 때까지 스레드 A가 안 끝나면 타임아웃
                 end
-                
             join_any
-            
+        
             disable fork;
-            
+        
             if (df_flag) begin
                 $display("[ERROR] %t | AXI Write Timeout! Deadlock Detected at Addr: 0x%h", $time, tb_awaddr);
             
@@ -212,7 +224,6 @@ module tb_axi_lite_slave(
             else begin
                 $display("[PASS] %t | AXI Write Success: Addr 0x%h = Data 0x%h", $time, tb_awaddr, tb_wdata);
             end
-
         end
     endtask
     
@@ -244,8 +255,12 @@ module tb_axi_lite_slave(
                             wvalid <= 1'd0;
                         end
                         
+                        
                         wait(bvalid);
+                        @(posedge clk);
                         bready <= 1'd1;
+                        
+                        wait(bvalid && bready);
                         @(posedge clk);
                         bready <= 1'd0;
                     join
