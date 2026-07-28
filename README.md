@@ -191,3 +191,35 @@
 ### 3. AXI4-Lite Write Transaction 최종 검증
 * **프로토콜 검증:** Handshake 시점에 AXI4-Lite 표준 정상 완료 코드인 `BRESP = 2'b00` (OKAY)이 정상 전달됨을 확인
 * **파형 검증:** 45ns~55ns 클럭 구간에서 `bvalid=1`과 `bready=1`이 동시 성립하는 1-clock Handshake 펄스가 Waveform상에 차분하게 렌더링되며 Complete Write Transaction 성공
+
+---
+
+## 📝 07월 28일: Testbench Delay Case 대응 및 2-Block FSM 조합 논리 출력 최적화
+
+### 1. Testbench 신호 미초기화(X 상태) 제거 및 Handshake De-assertion 적용
+* **문제 현상:** 주소/데이터 지연(Delay) 테스트 진행 시, FSM이 `0 -> 2 -> 3 -> 0 -> 2` 형태로 비정상 널뛰기(State Toggling)를 반복하며 트랜잭션이 꼬이는 현상 발생.
+* **원인 규명:** 
+  1. Testbench $0\text{ns}$ 시점에 `bready`, `awvalid` 등의 신호가 초기화되지 않아 `X` (Unknown) 상태가 FSM 판단 로직에 전파됨.
+  2. Data Handshake(`wvalid && wready`) 완료 직후 Master가 `wvalid`를 꺼주지 않아(De-assertion 누락), Slave FSM이 "새로운 데이터가 또 들어왔다"고 착각하여 상태 재진입 발생.
+* **해결 조치:**
+  * Testbench `initial` 블록 시작 시점($0\text{ns}$)에 모든 Master 입력 신호를 `0`으로 명확히 초기화.
+  * Handshake 성공 직후 다음 클럭 에지에서 `valid` 신호를 `0`으로 즉시 내려주는 "1-Shot 법칙" 적용.
+
+### 2. TB `fork ... join` 병렬화 구조 개편을 통한 Deadlock 방지
+* **문제 현상:** Address와 Data 채널 사이에 Intentional Delay를 부여했을 때, Testbench가 `wait(bvalid)` 줄까지 내려오지 못하고 상위 구문에서 무한 대기(Deadlock)하는 현상 발생.
+* **원인 규명:** 순차적 `wait` 구문 작성 시, 비동기로 먼저 완료된 채널의 Handshake 시점을 Testbench가 놓치고 멈춰버림.
+* **해결 조치:** 
+  * Testbench Task 내에서 **"지연 생성(`repeat`) + 신호 쏘기 + Handshake 대기(`wait`)"** 과정 전체를 Address 채널과 Data 채널로 분리하여 `fork ... join` 병렬 스레드로 재구축.
+  * 채널 도착 순서와 지연 시간에 관계없이 두 채널 핸드셰이크가 완결된 후 B 채널 대기로 안전하게 진입하도록 보장.
+
+### 3. 2-Block FSM 조합 논리 출력 제어 (1-Clock Pulse Glitch 제거)
+* **문제 현상:** Slave가 `WRESP` 상태로 정상 진입했으나, Master의 `bready` 응답을 기다리지 않고 `bvalid` 신호가 1클럭 만에 `0`으로 떨어지는 프로토콜 위반 발생.
+* **원인 규명:** 이전 상태(`WAIT_ADDR`)의 전환 조건문(`if(awvalid && awready)`) 내부에서 `s_bvalid = 1'b1`을 할당했던 Mealy 스타일 설계 오류. 조건 충족 순간(1클럭)에만 출력되고, 실제로 `WRESP` 상태에 도달했을 때는 출력이 디폴트(`0`)로 돌아감.
+* **해결 조치:**
+  * 정석 2-Block FSM (Moore 스타일) 적용: 조건문 내부에서의 출력 할당을 제거하고, `always_comb` 내에서 오직 **현재 상태(`curr_state == WRESP`)**일 때만 `s_bvalid = 1'b1`을 출력하도록 개편.
+  * Master가 `bready=1`을 올려 핸드셰이크가 성사될 때까지 `bvalid` 신호가 꺼지지 않고 수평 유지(Hold)됨을 확인.
+
+### 4. Write Transaction 완전성 및 Handshake 종료(Teardown) 최종 검증
+* **Handshake 완결:** `bvalid=1` 유지 상태에서 Master의 `bready=1` 수신 시 1-clock Handshake 정상 완결.
+* **Teardown & 복귀 검증:** Handshake 직후 다음 클럭에서 `bvalid`와 `bready`가 동시에 `0`으로 차분하게 떨어지며, FSM이 `IDLE` 상태로 복귀함과 동시에 `awready`, `wready`가 `1`로 재활성화(다음 트랜잭션 대기 상태)됨을 확인.
+* **데이터 보존:** 트랜잭션 종료 후에도 내부 버퍼 레지스터(`buf_wdata`)에 수신 데이터가 정합성 있게 유지됨을 Waveform으로 최종 입증.
