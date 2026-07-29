@@ -92,13 +92,24 @@ module tb_axi_lite_slave(
         rst_n <= 1'd1;
         
         $display("[%0t ns] task started", $time);
-        data_first(32'd4, 32'd8);
+        fork
+            data_first(32'd4, 32'd8);
+            
+            begin
+                #20;
+                rst_n <= 1'd0;
+                #15;
+                rst_n <= 1'd1;
+            end
+        join
+        
+        //back_to_back(32'd4, 32'd8, 32'd2, 32'd4);
+        //address_first(32'd4, 32'd8);
+        //data_first(32'd4, 32'd8);
         //commoncase (32'd4, 32'd8);
         $display("[%0t ns] task finished", $time);
         $finish;
     end
-    
-    
     
     task commoncase(
         input [31:0] tb_wdata,
@@ -233,47 +244,50 @@ module tb_axi_lite_slave(
     );
         reg af_flag;
         begin
-        
-            af_flag <= 1'd0;
-            @(posedge clk); //clk 동기화.
-            awaddr <= tb_awaddr;
-            repeat (3) @(posedge clk);
-            wdata <= tb_wdata;
+            af_flag = 0;
+            wstrb <= 4'b1110;
             
-            fork
-            
-                begin   //여기에는 원래 동작들
+            fork//fix: common case와는 달리 3clk지연 뒤에 ready를 기다리니까 무한 대기에 걸린 거 같음
+                begin
                     fork
                         begin
-                            wait(awready);
+                            @(posedge clk);
+                            awvalid <= 1'd1;
+                            awaddr <= tb_awaddr;
+                            
+                            wait(awvalid && awready);
                             @(posedge clk);
                             awvalid <= 1'd0;
                         end
                         begin
-                            wait(wready);
+                            repeat(3) @(posedge clk);
+                            wdata <= tb_wdata;
+                            wvalid <= 1'd1;
+                            
+                            wait(wready && wvalid);
                             @(posedge clk);
                             wvalid <= 1'd0;
                         end
-                        
-                        
-                        wait(bvalid);
-                        @(posedge clk);
-                        bready <= 1'd1;
-                        
-                        wait(bvalid && bready);
-                        @(posedge clk);
-                        bready <= 1'd0;
                     join
+        
+                    wait(bvalid==1'd1);
+                    repeat(3) @(posedge clk);   //bready 신호를 지연시키기.
+                    bready <= 1'd1;
+                        
+                    wait(bvalid && bready);
+                    @(posedge clk);
+                    bready <= 1'd0;
+                    
+                    repeat(3) @(posedge clk);
                 end
                 begin
                     repeat(100) @(posedge clk);
-                    af_flag <= 1'd1;
+                    af_flag = 1; // 100 클럭이 지날 때까지 스레드 A가 안 끝나면 타임아웃
                 end
-                
             join_any
-            
+        
             disable fork;
-            
+        
             if (af_flag) begin
                 $display("[ERROR] %t | AXI Write Timeout! Deadlock Detected at Addr: 0x%h", $time, tb_awaddr);
             
@@ -285,7 +299,157 @@ module tb_axi_lite_slave(
             else begin
                 $display("[PASS] %t | AXI Write Success: Addr 0x%h = Data 0x%h", $time, tb_awaddr, tb_wdata);
             end
+        end
+    endtask
 
+    task back_to_back(
+        input [31:0] tb_wdata1,
+        input [31:0] tb_awaddr1,
+        input [31:0] tb_wdata2,
+        input [31:0] tb_awaddr2
+    );
+        reg bb_flag;
+        begin
+            bb_flag = 0;
+            wstrb <= 4'b1110;
+            
+            fork//fix: common case와는 달리 3clk지연 뒤에 ready를 기다리니까 무한 대기에 걸린 거 같음
+                begin
+                    fork
+                        begin
+                            @(posedge clk);
+                            awvalid <= 1'd1;
+                            awaddr <= tb_awaddr1;
+                            
+                            wait(awvalid && awready);
+                            @(posedge clk);
+                            awvalid <= 1'd0;
+                        end
+                        begin
+                            repeat(3) @(posedge clk);
+                            wdata <= tb_wdata1;
+                            wvalid <= 1'd1;
+                            
+                            wait(wready && wvalid);
+                            @(posedge clk);
+                            wvalid <= 1'd0;
+                        end
+                    join
+        
+                    wait(bvalid);
+                    bready <= 1'd1;
+                        
+                    wait(bvalid && bready);
+                    @(posedge clk);
+                    bready <= 1'd0;
+                    
+                    fork
+                        begin
+                            
+                            awvalid <= 1'd1;
+                            awaddr <= tb_awaddr2;
+                            
+                            wait(awvalid && awready);
+                            @(posedge clk);
+                            awvalid <= 1'd0;
+                        end
+                        begin
+                            repeat(1) @(posedge clk);
+                            wdata <= tb_wdata2;
+                            wvalid <= 1'd1;
+                            
+                            wait(wready && wvalid);
+                            @(posedge clk);
+                            wvalid <= 1'd0;
+                        end
+                    join
+                    wait(bvalid);
+                    bready <= 1'd1;
+                        
+                    wait(bvalid && bready);
+                    @(posedge clk);
+                    bready <= 1'd0;
+                    
+                    repeat (3) @(posedge clk);
+                end
+                begin
+                    repeat(100) @(posedge clk);
+                    bb_flag = 1; // 100 클럭이 지날 때까지 스레드 A가 안 끝나면 타임아웃
+                end
+            join_any
+        
+            disable fork;
+        
+            if (bb_flag) begin
+                $display("[ERROR] %t | AXI Write Timeout! Deadlock Detected at Addr: 0x%h", $time, tb_awaddr1);
+            
+                awvalid <= 1'd0;
+                wvalid  <= 1'd0;
+                bready  <= 1'd0;
+               
+            end 
+            else begin
+                $display("[PASS] %t | AXI Write Success: Addr 0x%h = Data 0x%h", $time, tb_awaddr1, tb_wdata1);
+            end
+        end
+    endtask
+    
+    task rst_case(
+        input [31:0] tb_wdata1,
+        input [31:0] tb_awaddr1
+    );
+        reg rs_flag;
+        begin
+            rs_flag <= 0;
+            wstrb <= 4'b1111;
+            
+            fork//fix: common case와는 달리 3clk지연 뒤에 ready를 기다리니까 무한 대기에 걸린 거 같음
+                begin
+                    fork
+                        begin
+                            @(posedge clk);
+                            awvalid <= 1'd1;
+                            awaddr <= tb_awaddr1;
+                            
+                            wait(awvalid && awready);
+                            @(posedge clk);
+                            awvalid <= 1'd0;
+                        end
+                        begin
+                            repeat(3) @(posedge clk);
+                            wdata <= tb_wdata1;
+                            wvalid <= 1'd1;
+                            
+                            
+                        end
+                    join
+                    
+         
+                    repeat (3) @(posedge clk);
+                    
+                end
+                begin
+                    repeat(100) @(posedge clk);
+                    rs_flag = 1; // 100 클럭이 지날 때까지 스레드 A가 안 끝나면 타임아웃
+                end
+                begin
+                    wait (!rst_n);
+                end
+            join_any
+        
+            disable fork;
+        
+            if (rs_flag) begin
+                $display("[ERROR] %t | AXI Write Timeout! Deadlock Detected at Addr: 0x%h", $time, tb_awaddr1);
+            
+                awvalid <= 1'd0;
+                wvalid  <= 1'd0;
+                bready  <= 1'd0;
+               
+            end 
+            else begin
+                $display("[PASS] %t | AXI Write Success: Addr 0x%h = Data 0x%h", $time, tb_awaddr1, tb_wdata1);
+            end
         end
     endtask
     
