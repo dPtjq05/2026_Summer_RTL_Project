@@ -223,3 +223,37 @@
 * **Handshake 완결:** `bvalid=1` 유지 상태에서 Master의 `bready=1` 수신 시 1-clock Handshake 정상 완결.
 * **Teardown & 복귀 검증:** Handshake 직후 다음 클럭에서 `bvalid`와 `bready`가 동시에 `0`으로 차분하게 떨어지며, FSM이 `IDLE` 상태로 복귀함과 동시에 `awready`, `wready`가 `1`로 재활성화(다음 트랜잭션 대기 상태)됨을 확인.
 * **데이터 보존:** 트랜잭션 종료 후에도 내부 버퍼 레지스터(`buf_wdata`)에 수신 데이터가 정합성 있게 유지됨을 Waveform으로 최종 입증.
+
+---
+
+## 📝 07월 29일: AXI4-Lite Write Channel 코너 케이스 정복 및 Read Channel RTL 설계/검증 진입
+
+### 1. Write Channel 코너 케이스 및 예외 처리 완벽 검증
+
+* **AW 채널 선행 지연 검증 (Address-first Case)**
+  * 주소가 데이터보다 먼저 입력되는 비동기 시나리오에서, 슬레이브 내부 주소 버퍼가 주소를 정상적으로 래치(Latch)함을 확인.
+  * 늦게 도달하는 데이터 채널(`W`)이 인가될 때까지 B 채널 응답 신호(`s_bvalid`)가 섣불리 튀어 오르지 않도록 **프로토콜 억제(Suppress) 동작** 완벽 입증.
+
+* **Response Backpressure (bready 3클럭 지연) 검증**
+  * 마스터의 응답 수신 준비 신호(`s_bready`)가 3클럭 동안 지연되는 백프레셔(Backpressure) 상황 연출.
+  * 슬레이브가 `s_bvalid` 신호를 흔들림 없이 고정(Hold)하고, 마스터의 핸드셰이크 시점에 차분하게 신호를 해제하는 타이밍 안정성 확인.
+
+* **Back-to-Back 연속 쓰기 & 1-Bubble Cycle 최적화**
+  * 연속 쓰기 요청 시 트랜잭션 사이의 공백(Bubble Cycle)을 **1클럭**으로 극단까지 압축하여 최대 처리량(Throughput) 확보.
+  * 파이프라이닝 상태에서 이전 데이터 버퍼를 덮어쓰거나 오염시키는 상호 간섭(Interference) 버그가 발생하지 않음을 검증 완료.
+
+* **🚨 [Troubleshooting] 동작 중 Reset 및 Level Wait Trap 해결**
+  * **문제 현상:** 트랜잭션 수행 도중 비동기 리셋(`rst_n`)이 인가될 때, Testbench 내부의 레벨 감지 대기 구문(`wait(ready)`)이 영원히 깨어나지 않고 무한 대기(Simulation Hang)에 빠지는 현상 발생.
+  * **원인 규명:** 슬레이브가 리셋되어 `ready` 신호를 내렸으나, Testbench 스레드가 리셋 이벤트를 감지하지 못하고 레벨 변화만 대기하다 갇혀버림.
+  * **해결 조치:** Testbench Task 내부 핸드셰이크 대기 로직에 `negedge rst_n` 이벤트를 조건으로 결합하여, 리셋 발생 시 대기 트랩을 즉시 강제 탈출하도록 개편.
+  * **복구 검증:** 트랜잭션 도중 리셋이 들어와도 버퍼 데이터 즉시 소거(Clear), FSM IDLE 상태 강제 복귀, 리셋 해제 후 다음 트랜잭션을 깔끔하게 정상 수신하는 **Active Reset & Recovery** 메커니즘 완벽 입증.
+
+### 2. Read Channel RTL 설계 및 검증 진입
+
+* **Read Channel 2-Block FSM RTL 구현 완료**
+  * AXI4-Lite 규격에 준수하여 AR(Read Address) 채널 및 R(Read Data/Resp) 채널 제어 로직 설계.
+  * 조합회로(`always_comb`)와 순차회로(`always_ff`)를 철저히 분리한 **Read 2-Block FSM 구조** 구축.
+
+* **Testbench Task 모듈화 및 Verification Environment 확장**
+  * SystemVerilog Read Task 설계 시 `output` 파라미터를 적용하여, 슬레이브로부터 읽어온 데이터를 Task 반환값으로 수거하는 모듈화 완료.
+  * 읽어온 데이터와 기대값(Expected Data)을 자동으로 대조/검증하는 Self-checking 구조 정립 후 Common Case 시뮬레이션 진입.
