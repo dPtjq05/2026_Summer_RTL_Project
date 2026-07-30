@@ -55,8 +55,8 @@ output reg s_bresp,
 output reg s_arready,
 
 output reg s_rvalid,
-output reg s_rdata,
-output reg s_rresp
+output reg [31:0] s_rdata,
+output reg [1:0] s_rresp
     );
     
     reg [31:0] dummy0;
@@ -103,11 +103,14 @@ output reg s_rresp
             
             s_rvalid <= 1'd0;
             s_rdata <= 1'd0;
-            s_rresp <= 1'd0;
+            s_rresp <= 2'b00;
             
             buf_wdata <= 32'd0;
             buf_awaddr <= 32'd0;
             buf_wstrb <= 4'd0;
+            
+            buf_araddr <= 32'd0;
+            buf_rdata <= 32'd0;
             
         end
         else begin
@@ -238,14 +241,29 @@ output reg s_rresp
             
             case (r_current_state) 
                 RIDLE: begin
+                
+                    s_rvalid <= 1'd0;
+                    s_rresp <= 2'b00;
+                    
                     if (s_arready && s_arvalid) begin
                         buf_araddr <= s_araddr;
                     end
                 end
                 
                 READ: begin
-                    s_rdata <= buf_rdata;
+                    s_rvalid <= 1'd1;
                     
+                    if (buf_araddr[31] == 1'b1) begin
+                            s_rresp <= 2'b01;
+                    end
+                    else begin
+                        if (s_rready && s_rvalid) begin
+            
+                            s_rvalid <= 1'd1;
+                            s_rresp <= 2'b00;
+    
+                        end
+                    end
                 end
             
             endcase
@@ -259,6 +277,8 @@ output reg s_rresp
         s_wready = 1'd1;
         s_awready = 1'd1;
         
+        s_arready = 1'd1;
+
         case (w_current_state)
             WIDLE: begin
                 s_wready = 1'b1;
@@ -310,25 +330,34 @@ output reg s_rresp
         case (r_current_state)
             RIDLE: begin
                 s_arready =1'd1;
-                s_rvalid = 1'd0;
+               
                 
                 if (s_arready && s_arvalid) begin
-                    buf_araddr = s_araddr;
+                    
                     r_next_state = READ;
                 end
             end
             
             READ: begin
                 s_arready = 1'd0;
-                s_rvalid = 1'd1;
                 
-                if (s_rvalid && s_rready) r_next_state = RIDLE;
-                case (buf_araddr[3:2])
-                    2'b00: buf_rdata = dummy0;
-                    2'b01: buf_rdata = dummy1;
-                    2'b10: buf_rdata = dummy2;
-                    2'b11: buf_rdata = dummy3;
-                endcase
+                if (s_rvalid && s_rready) begin
+                    if (buf_araddr[31] == 1'd1) begin
+                        buf_rdata = 32'h123; 
+                    end
+                    else begin
+                        case (buf_araddr[3:2])
+                            2'b00: buf_rdata = dummy0;
+                            2'b01: buf_rdata = dummy1;
+                            2'b10: buf_rdata = dummy2;
+                            2'b11: buf_rdata = dummy3;
+                        
+                        endcase
+                        s_rdata = buf_rdata;
+                        r_next_state = RIDLE;
+                    end
+                end
+                
             end
             
         endcase
