@@ -257,3 +257,27 @@
 * **Testbench Task 모듈화 및 Verification Environment 확장**
   * SystemVerilog Read Task 설계 시 `output` 파라미터를 적용하여, 슬레이브로부터 읽어온 데이터를 Task 반환값으로 수거하는 모듈화 완료.
   * 읽어온 데이터와 기대값(Expected Data)을 자동으로 대조/검증하는 Self-checking 구조 정립 후 Common Case 시뮬레이션 진입.
+
+---
+
+## 📝 07월 30일: Read Channel 타이밍 버그 해결 및 AXI RRESP 프로토콜 예외 처리 설계
+
+### 1. Read Channel 핵심 타이밍 버그 원인 규명 및 완벽 수정 (Key Achievement)
+
+* **🚨 [Troubleshooting] Read Valid-Data 불일치 및 Delta Cycle 캡처 오류 해결**
+  * **문제 현상:** Master가 Read Transaction을 수행할 때 기대값(`32'h0000_0004`) 대신 초기 값인 `32'h0000_0000`을 읽어가고, Testbench Task의 `output` 변수(`tb_rdata`)가 `X` (Unknown) 상태 또는 `0`으로 캡처되는 현상 발생.
+  * **원인 분석:**
+    1. **RTL Valid-Data Mismatch:** FSM 제어 로직상 `s_rvalid` 신호가 먼저 High(`1`)로 올라가고, 정작 실제 데이터 `s_rdata`는 1클럭 뒤늦게 갱신되는 타이밍 어긋남 버그 포착.
+    2. **TB Delta Cycle Issue:** Verilog Task의 Copy-out 규칙과 Non-blocking 할당(`<=`) 간의 델타 사이클(Delta Cycle) 시차로 인해, Handshake 시점에 신선한 데이터를 수거하지 못함.
+  * **해결 조치:** 조합 회로의 상태 전환 지점(`r_next_state == READ`)을 정밀 타격하여, `s_rvalid`와 `s_rdata`가 동일한 클럭 에지에서 동기식으로 동시에 래치(Latch)되도록 RTL 개편.
+  * **검증 결과:** 억지 딜레이(3클럭 지연 등)나 꼼수 구문 없이도 Master가 `s_rvalid = 1`을 감지하는 바로 그 순간 신선한 데이터(`32'h0000_0004`)를 완벽히 수신 성공. 정석 **1-Cycle Read Latency** 타이밍 달성.
+
+### 2. AXI4-Lite RRESP 프로토콜 규격 분석 및 주소 예외 처리 설계
+
+* **RRESP Status Code 스펙 정밀 분석**
+  * AXI4-Lite RRESP는 단순 1비트 완료 플래그가 아닌 **2비트 상태 코드** (`2'b00`: OKAY, `2'b10`: SLVERR)임을 재확인.
+  * Master는 오직 `s_rvalid = 1`인 핸드셰이크 구간에서만 응답 코드를 평가하므로, IDLE 상태에서 불필요하게 응답 라인을 디폴트 유지할 필요 없이 Valid 펄스와 철저히 동기화 제어.
+
+* **Address Aliasing 감지 및 SLVERR 응답 메커니즘 수립**
+  * **주소 경계 체크:** 상위 주소 비트(`buf_araddr[31:4] != 4'b0000`)를 디코딩하여, 정해진 내부 레지스터 범위를 벗어난 비정상 접근을 감지하는 예외 처리 아키텍처 구상.
+  * **예외 검증 시나리오:** MSB가 1인 주소 패턴(예: `32'h8000_0000` 등)을 주입했을 때 슬레이브가 이를 범주 외 접근으로 인지하고, B/R 채널 응답으로 `SLVERR (2'b10)` 코드를 정확히 반환하는지 테스트벤치 코너 케이스 시나리오 정립.
