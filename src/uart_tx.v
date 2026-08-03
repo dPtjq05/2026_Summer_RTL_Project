@@ -49,8 +49,7 @@ module uart_tx(
     
     always@ (posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            tx <= 1'd1;
-            tx_busy <= 1'd0;
+            
             current_state <= IDLE;
             current_reg_data <= 8'd0;
             current_cnt_t <= 4'd0;

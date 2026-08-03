@@ -55,7 +55,7 @@ module uart_rx(
     
     always@ (posedge clk) begin
         if (!rst_n) begin
-            rx_done <= 1'd0;
+            
             dout<= 8'd0;
             current_cnt_t <= 4'd0;
             current_cnt_d <= 3'd0;
@@ -78,9 +78,11 @@ module uart_rx(
         next_cnt_t = current_cnt_t;
         next_cnt_d = current_cnt_d;
         next_data = current_data;
+        rx_done = 1'd0;
     
         case (current_state)
             IDLE: begin //1이 계속 유지된다면 대기 상태, 0으로 떨어지는 순간이 start bit가 맞는지 판단 시작
+                rx_done = 1'd0;
                 if (rx) begin 
                     next_state = IDLE;
                 end
@@ -90,8 +92,11 @@ module uart_rx(
             end
                 
             START: begin //tick의 수를 세면서 진짜 시작인지 판단
+                
                 if (sampling_tick) begin
+                    
                     if (current_cnt_t == 4'd7) begin
+                        
                         if(!rx) begin
                             next_cnt_t = 4'd0;
                             next_state = DATA;
@@ -126,6 +131,7 @@ module uart_rx(
 //                   next_state = START;
 //                end
             DATA: begin // start state에서 판단이 섰으면 바로 데이터 읽으러 간다
+                rx_done = 1'd0;
                 if (sampling_tick) begin        //tick이 튄 경우
                    if (current_cnt_t == 4'd15) begin    //tick이 15번 튀어서 신호의 중간에 간 경우
                        next_data = {rx, current_data[7:1]}; //data 집어넣고 
@@ -152,10 +158,12 @@ module uart_rx(
                 
             STOP: begin     //15개의 tick을 세고 15가 되었을 때 stop이 맞는지 확인
             // +) 스탑 비트가 정상일 때 최종 출력 선에 데이터 할당
+                rx_done = 1'd0;
                 if (sampling_tick) begin
                     rx_done = 1'd0;
                     if (current_cnt_t == 4'd15) begin
                         next_cnt_t = 4'd0;
+                        rx_done = 1'd0;
                         if (rx == 1'd1) begin
                             rx_done = 1'd1;
                             next_state = IDLE;
@@ -163,6 +171,7 @@ module uart_rx(
                         
                     end
                     else begin
+                        rx_done = 1'd0;
                         next_cnt_t = current_cnt_t + 4'd1;  //cnt_T가 아직 가득차지 않았으면 그냥 1을 더한다.
                     end
                 
