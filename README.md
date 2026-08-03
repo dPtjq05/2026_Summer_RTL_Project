@@ -281,3 +281,41 @@
 * **Address Aliasing 감지 및 SLVERR 응답 메커니즘 수립**
   * **주소 경계 체크:** 상위 주소 비트(`buf_araddr[31:4] != 4'b0000`)를 디코딩하여, 정해진 내부 레지스터 범위를 벗어난 비정상 접근을 감지하는 예외 처리 아키텍처 구상.
   * **예외 검증 시나리오:** MSB가 1인 주소 패턴(예: `32'h8000_0000` 등)을 주입했을 때 슬레이브가 이를 범주 외 접근으로 인지하고, B/R 채널 응답으로 `SLVERR (2'b10)` 코드를 정확히 반환하는지 테스트벤치 코너 케이스 시나리오 정립.
+
+---
+
+## 📝 08월 03일: UART-to-AXI Bridge FSM 아키텍처 설계 및 시스템 통합 로드맵 수립
+
+### 1. 시스템 통합 로드맵 및 핵심 모듈 역할 정의
+
+* **UART RX / TX 코어 역할 및 직/병렬 변환 메커니즘**
+  * **TX Core (Parallel-to-Serial):** 내부 8비트 병렬 데이터를 표준 보레이트 타임스탬프에 맞춰 1비트 직렬 파형으로 내보내는 발사대.
+  * **RX Core (Serial-to-Parallel):** 외부 비동기 1비트 직렬 신호를 16배 오버샘플링하여 신호 정중앙을 정밀 타격, 8비트 병렬 데이터로 복원하는 정밀 센서.
+* **Bridge 설계 완료 후 5단계 Full-Chain 검증 로드맵**
+  1. **Top-Level 모듈 결합:** `uart_top` + `uart_axi_bridge` + `axi_lite_slave` 최상위 바인딩
+  2. **End-to-End System Testbench 시뮬레이션:** PC 입출력 패킷 기반 완전체 시뮬레이션
+  3. **Vivado XDC 핀 매핑:** Cmod A7 (Artix-7 XC7A35T) 물리적 IO 및 12MHz/100MHz 클럭 제약 설정
+  4. **Synthesis & Bitstream 생성:** Latch 0개, STA Timing Closure (WNS > 0) 달성 및 비트스트림 추출
+  5. **FPGA 실물 보드 검증:** PC 시리얼 터미널(Tera Term) ↔ Cmod A7 간 실제 레지스터 Read/Write 릴레이 검증
+
+
+### 2. UART-to-AXI Bridge 모듈 FSM 구조 및 데이터 패스
+
+* **패킷 프로토콜 및 명령어 디코딩**
+  * **Command Decoding:** 수신 첫 바이트의 ASCII 코드를 분석하여 트랜잭션 성격 판단 (`'W'` / `8'h57`: Write, `'R'` / `8'h52`: Read).
+  * **`cmd_reg` 선언 필수성:** 주소 및 데이터 바이트가 연속 수신되는 동안 `rx_data` 버스 값이 계속 덮어씌워지므로(Override), 패킷 완결 시점까지 최초 명령어를 보존하기 위한 전용 캡처 레지스터(`cmd_reg`) 배치.
+* **3-bit 6-State FSM 아키텍처 수립**
+  * `IDLE` ➡️ `RX_ADDR` ➡️ `RX_DATA` / `AXI_WRITE` / `AXI_READ` ➡️ `TX_RESP`
+* **Read Data Return Path (수신 데이터 패킷화 반환)**
+  * `axi_lite_slave` 읽기 완결 ➡️ Bridge 내부 `rdata_reg` (32-bit) 캡처 ➡️ `TX_RESP` 상태 진입 후 8비트씩 4회 분할하여 UART TX 송신 ➡️ PC 터미널 상에 데이터 최종 출력.
+
+
+### 3. RTL 설계 및 클럭 타이밍 핵심 포인트
+
+* **`rx_done` 1-Clock Pulse 동기화 및 Concatenation Shift**
+  * FPGA 시스템 클럭과 느린 UART 통신 속도 간의 거대한 시차 극복을 위해, 주소 4바이트 수신 중 `rx_done`이 정확히 1클럭 튀어 오르는 상승 에지 시점에만 결합 시프트 연산(`{addr_reg[23:0], rx_data}`) 및 `byte_cnt` 인크리먼트 수행.
+* **UART vs AXI 제어 메커니즘 비교**
+  * **UART 구간:** 백프레셔(Backpressure)가 없는 단방향 펄스 기반 제어로 간결한 레지스터 갱신 가능.
+  * **AXI4-Lite 구간:** 양방향 `VALID`/`READY` 상호 핸드셰이크 유지 및 해제 조건 처리로 인한 세분화된 상태 제어 필요.
+* **AXI Deadlock 방지를 위한 Master 주도적 VALID Assertion**
+  * AXI 프로토콜 규격에 의거하여 Master(Bridge)는 Slave의 `READY` 응답을 무작정 기다리지 않고, 데이터 준비 완료 즉시 `VALID = 1`을 선제적으로 Assert하여 버스 데드락(Deadlock) 위험을 근본적으로 차단.
