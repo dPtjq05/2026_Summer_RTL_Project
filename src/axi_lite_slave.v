@@ -283,7 +283,6 @@ output reg [1:0] s_rresp
                 s_wready = 1'b1;
                 s_awready = 1'b1;
                 if (s_wvalid && s_awvalid) begin
-                    
                     w_next_state = WRESP;   //대기 상태로 넘어갈 필요 없이 바로 RESP로 넘어간다.
                 end
                 else if (s_wvalid) begin    //data만 들어오고 주소 기다리는 경우

@@ -69,14 +69,17 @@ module bridge_uart_to_axi(
     localparam AXI_READ = 3'b100;   //4
     localparam TX_RESP = 3'b101;    //5
     
+    reg ar_done; //AR channel의 handshake 여부를 확인하는 reg.
     reg [2:0] current_state;
     reg [2:0] next_state;
     
     reg [7:0] cmd_reg;
+    reg [31:0] data_reg;
     
     reg [1:0] cnt_addr;
-    reg [31:0] shift_reg;
+    reg [31:0] addr_reg;
     
+    reg [1:0] cnt_resp; //resp에서 쓰는 cnt
     
     always@ (posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -89,25 +92,51 @@ module bridge_uart_to_axi(
                 IDLE: begin
                     if ((rx_done ==1'd1)&&(rx_data==CMD_READ)) begin
                         cnt_addr <= 2'd0;
-                        cmd_reg <= rx_data;
+                        cmd_reg <= rx_data; //내부 reg에 write 신호라는 것을 저장.
                     end
                 end
                 RX_ADDR: begin
                     if (rx_done) begin
+                        addr_reg <= {addr_reg[23:0], rx_data};
                         if (cnt_addr == 2'd3) begin
                             cnt_addr <= 2'd0;
                         end
-                        else begin    
-                            shift_reg <= {shift_reg[23:0], rx_data};
-                            cnt_addr <= cnt_addr+ 2'd1;
-                        end
+                        else cnt_addr <= cnt_addr + 2'd1;
                     end
                     
                 end
                 AXI_READ: begin
-                    m_axi_arvalid = 1'd1;
-                    if (m_axi_arready && m_axi_arvalid) begin
-                        
+                    m_axi_araddr <= addr_reg;
+                    ar_done <= 1'd0;
+                    if (!ar_done) begin
+                        if (m_axi_arvalid && m_axi_arready) begin
+                            ar_done <= 1'd1;
+                        end
+                    end
+                    else begin
+                        if (m_axi_rvalid && m_axi_rready) begin //R channel handshake
+                        //이제 정상적으로 읽었는지 아닌지 판단해야함.
+                            if (m_axi_rresp==2'b00) begin   //정상작동 응답
+                                data_reg <= m_axi_rdata;
+                                m_axi_rready <= 1'd0;
+                            end
+                            else begin
+                                //비정상 응답
+                            end
+                        end
+                    end
+                end
+                
+                TX_RESP: begin
+                    cnt_resp <= 2'd0;
+                    case (cnt_resp)
+                        2'd0: tx_data <= data_reg [31:24];
+                        2'd1: tx_data <= data_reg [23:16];
+                        2'd2: tx_data <= data_reg [15:8];
+                        2'd3: tx_data <= data_reg [7:0];
+                    endcase
+                    if (cnt_resp == 2'd3) begin
+                        cnt_resp <= 2'd0;
                     end
                 end
             endcase
@@ -124,18 +153,40 @@ module bridge_uart_to_axi(
             end
             
             RX_ADDR: begin
-                if (cnt_addr == 2'd3) begin
-                    if (cmd_reg == CMD_READ) begin
-                        next_state = AXI_READ;
-                    end
-                    else if (cmd_reg == CMD_WRITE) begin
-                        next_state = RX_DATA;
+                if (rx_done) begin
+                    if (cnt_addr == 2'd3) begin
+                        if (cmd_reg == CMD_READ) begin
+                            next_state = AXI_READ;
+                        end
+                        else if (cmd_reg == CMD_WRITE) begin
+                            next_state = RX_DATA;
+                        end
                     end
                 end
-                else next_state = RX_ADDR;
             end
             AXI_READ: begin
-                
+                m_axi_arvalid = 1'd1;
+                m_axi_rready = 1'd0;
+                if (!ar_done) begin //ar handshake 이전
+                    if (m_axi_arvalid && m_axi_arready) begin
+                        m_axi_arvalid = 1'd0;
+                        m_axi_rready = 1'd1;
+                    end
+                    else begin
+                        m_axi_arvalid = 1'd1;
+                        m_axi_rready = 1'd0;
+                    end
+                end
+                else begin  //ar handshake 이후 r handshake 대기중
+                    if (m_axi_rvalid  && m_axi_rready) begin
+                        m_axi_rready = 1'd0;
+                        m_axi_arvalid = 1'd1;
+                        next_state = TX_RESP;
+                    end
+                end
+            end
+            TX_RESP: begin
+                if (cnt_resp == 2'd3) next_state = IDLE;
             end
             
         endcase
