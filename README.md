@@ -319,3 +319,41 @@
   * **AXI4-Lite 구간:** 양방향 `VALID`/`READY` 상호 핸드셰이크 유지 및 해제 조건 처리로 인한 세분화된 상태 제어 필요.
 * **AXI Deadlock 방지를 위한 Master 주도적 VALID Assertion**
   * AXI 프로토콜 규격에 의거하여 Master(Bridge)는 Slave의 `READY` 응답을 무작정 기다리지 않고, 데이터 준비 완료 즉시 `VALID = 1`을 선제적으로 Assert하여 버스 데드락(Deadlock) 위험을 근본적으로 차단.
+
+---
+
+## 📝 08월 04일: UART-to-AXI Bridge Read Path 4-State FSM 및 2단계 핸드셰이크 제어 로직 정립
+
+### 1. Read Path 중심의 4-State FSM 뼈대 확립
+
+* **Read Transaction 동작을 위한 초간결 4-State FSM 구조**
+  * `IDLE`: PC의 명령 패킷('R' / `8'h52` 또는 'W' / `8'h57`) 수신 대기.
+  * `RX_ADDR`: PC로부터 4바이트(32-bit) 주소 연속 수신. `rx_done` 펄스를 트리거로 Shift Concatenation 기입.
+  * `AXI_READ`: AXI4-Lite Read Protocol 수행 (AR 채널 주소 전달 ➡️ R 채널 데이터 수거).
+  * `TX_RESP`: 수신한 32비트 읽기 데이터(`rdata_reg`)를 8비트씩 4회 분할하여 UART TX로 PC 터미널에 반환.
+
+
+### 2. Sequential vs Combinational 역할 분담 및 Zero-Latency 제어
+
+* **순차 회로 (Sequential Logic: `always @(posedge clk)`)**
+  * **대상 변수:** `state`, `ar_done` (AR 완료 플래그), `rdata_reg`, `addr_reg`
+  * **설계 목적:** 과거의 이벤트(AR 핸드셰이크 성공 여부)를 레지스터에 기록하고, 수신 데이터를 클럭 에지 동기화로 1클럭 이상 안전하게 보존(Hold)하기 위함.
+* **조합 회로 (Combinational Logic: `assign` 출력 버퍼링)**
+  * **대상 변수:**
+    ```verilog
+    assign m_axi_arvalid = (state == AXI_READ) && (!ar_done);
+    assign m_axi_rready  = (state == AXI_READ) && (ar_done);
+    ```
+  * **설계 목적:** FSM이 `AXI_READ` 상태에 진입함과 동시에 1클럭 지연(Latency) 없이 AXI 버스로 `arvalid` / `rready` 신호를 즉시 Assert하기 위함.
+
+
+### 3. AXI_READ 내부 2단계 순차 핸드셰이크 메커니즘
+
+* **`rx_done` 펄스 역할 제한 및 유령 De-assertion 방지**
+  * `rx_done`은 단 1클럭 동안만 High로 튀어 오르는 펄스이므로, **`RX_ADDR` ➡️ `AXI_READ` 상태 전이 트리거**로만 활용.
+  * `AXI_READ` 내부의 조합 논리 조건문에 `rx_done`을 직결할 경우, 1클럭 만에 `arvalid`가 0으로 떨어져 AXI 핸드셰이크가 무산되는 치명적 오류 차단.
+* **`ar_done` 플래그 기반 2단계 채널 순차 제어**
+  * **[1단계 - AR Channel]:** `ar_done == 0`일 때 `arvalid = 1` Assert. AR 핸드셰이크(`m_axi_arvalid && m_axi_arready`) 성사 시 상승 에지에서 `ar_done <= 1` 세팅.
+  * **[2단계 - R Channel]:** `ar_done == 1`로 전환되면 `rready = 1` Assert. R 핸드셰이크(`m_axi_rvalid && m_axi_rready`) 성사 시 `s_axi_rdata`를 `rdata_reg`에 안전하게 캡처.
+* **`TX_RESP` 탈출 조건 정밀화**
+  * R 채널 핸드셰이크(`s_axi_rvalid && m_axi_rready`) 완료 조건 단 하나만을 판단하여, 트랜잭션 수거가 완결된 순간 즉시 `AXI_READ`를 빠져나와 `TX_RESP` 상태로 이탈.
