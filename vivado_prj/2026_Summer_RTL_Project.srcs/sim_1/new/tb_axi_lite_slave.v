@@ -95,17 +95,17 @@ module tb_axi_lite_slave(
         fork
             data_first(32'd4, 32'd8);
             
-            begin
-                #20;
-                rst_n <= 1'd0;
-                #15;
-                rst_n <= 1'd1;
-            end
+//            begin
+//                #20;
+//                rst_n <= 1'd0;
+//                #15;
+//              rst_n <= 1'd1;
+//            end
         join
         
         //back_to_back(32'd4, 32'd8, 32'd2, 32'd4);
         //address_first(32'd4, 32'd8);
-        //data_first(32'd4, 32'd8);
+        data_first(32'd4, 32'd8);
         //commoncase (32'd4, 32'd8);
         $display("[%0t ns] task finished", $time);
         $finish;
@@ -118,6 +118,7 @@ module tb_axi_lite_slave(
         reg timeout_flag;
         begin
             timeout_flag = 0;
+            arvalid = 1'd0;
      
             @(posedge clk);
             awaddr  <= tb_awaddr;
@@ -182,7 +183,7 @@ module tb_axi_lite_slave(
             df_flag = 0;
             wstrb <= 4'b1110;
             
-            //아 시발 진짜 3클럭 지연 뒤에 wready를 기다리느라 그런 거 같은데, 아 나 에미 시발 ㅈ같은 거진
+            //아 진짜 3클럭 지연 뒤에 wready를 기다리느라 그런 거 같은데, 아 나 에미 시발 ㅈ같은 거진
             fork//fix: common case와는 달리 3clk지연 뒤에 ready를 기다리니까 무한 대기에 걸린 거 같음
                 begin
                     fork
@@ -220,6 +221,7 @@ module tb_axi_lite_slave(
                     repeat(100) @(posedge clk);
                     df_flag = 1; // 100 클럭이 지날 때까지 스레드 A가 안 끝나면 타임아웃
                 end
+                repeat (3) @(posedge clk);
             join_any
         
             disable fork;

@@ -93,7 +93,6 @@ output reg [1:0] s_rresp
             w_current_state <= WIDLE;
             r_current_state <= RIDLE;
             
-           
             
             s_bvalid <= 1'd0;
             s_bresp <= 1'd0;
