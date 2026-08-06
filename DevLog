@@ -1,0 +1,215 @@
+# 📖 Daily Development Log (DevLog)
+
+> **FPGA (Artix-7 / Cmod A7) 기반 12MHz 클럭 동작 고신뢰성 UART IP 및 AXI4-Lite 레지스터 맵 제어기 설계 프로젝트의 일자별 진행 상황, RTL 구현 상세 및 검증 기록입니다.**
+
+---
+
+## 📅 [2026-06-29] UART TX/RX Core 아키텍처 설계 및 단독 검증 (Unit Test)
+
+### 🎯 주요 달성 목표
+- [x] 표준 개발 환경 구조화 (`src/`, `tb/`, `vivado_prj/`, `.gitignore`)
+- [x] Baud Rate Generator (12MHz $\rightarrow$ 9600bps, 16x 오버샘플링 분주비 78) 구현
+- [x] 16x 오버샘플링 기반 UART RX Core 및 Registered Output (`rx_done` 1-clock pulse) 설계
+- [x] UART TX Core (`uart_tx.v`) 2-Block FSM 구현 및 단독 검증 환경 구축
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+* **2-Block FSM 구조를 통한 Combinational Loop 방지**
+  * `always @(*)` 내 카운터 연산 시 전선(`next_bit_data_cnt`)과 플립플롭(`bit_data_cnt`)을 분리하여 조합회로 무한 피드백 차단.
+* **상단 디폴트 할당(Default Assignment) 기법 적용**
+  * 조합회로 블록 최상단에 디폴트 출력을 선언하여 미정의 조건에 따른 의도치 않은 Latch 합성 근본 차단.
+
+### 🧪 검증 및 디버깅 요약
+* **Dynamic Data Injection 교란 시나리오 통과:** 전송 중 외부 `tx_data`선이 오염되더라도 내부 `tx_data_reg`가 데이터(`8'hAA`)를 완벽 홀딩함을 확인.
+* 🚨 **디버깅:** RX Data 7 비트 시프트 누락 버그 및 FSM 무한 연사 버그 수정  
+  👉 [`troubleshooting.md` Issue #01, #02 바로가기](troubleshooting.md#1-uart-core-ip-rx--tx--baud-generator)
+
+---
+
+## 📅 [2026-07-02] UART Top-Level 모듈 결합 및 내부 루프백 검증
+
+### 🎯 주요 달성 목표
+- [x] UART RX 모듈과 TX 모듈을 최상위 모듈(`uart_top.v`)로 패키징
+- [x] RX $\rightarrow$ 내부 버퍼 $\rightarrow$ TX 데이터 패스 구축 및 Loopback 통합 검증 통과
+
+### 🧪 검증 및 디버깅 요약
+* **Loopback Waveform Analysis:** 임의 바이트 수신 시 1비트 유실 없이 TX로 직렬 복사 출력됨을 확인.
+* 오버샘플링 샘플링 틱과 직렬 데이터 토글 타이밍 마진 정밀 일치 입증.
+
+---
+
+## 📅 [2026-07-08] AXI4-Lite Slave Write Channel FSM 리팩토링 (3-State $\rightarrow$ 4-State)
+
+### 🎯 주요 달성 목표
+- [x] AXI4-Lite Write FSM 아키텍처 개선 (`WIDLE` $\rightarrow$ `WDATA_WAIT` / `WADDR_WAIT` $\rightarrow$ `WRESP`)
+- [x] AW/W 채널 독립 대기방 분리를 통한 내부 깃발 레지스터(`cap` 변수) 100% 제거
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+* **0-Latency FSM 구조 구현:** 대기 상태에서 실시간 전선 신호(`s_wvalid`, `s_awvalid`)를 Look-ahead 결합하여 지각 신호 도착 즉시 0클럭 지연으로 탈출.
+* **동기식 레지스터 가두기 법칙 준수:** 조합회로는 방향지시등만 제어하고, 실제 레지스터 기입은 순차 회로(`always_ff`)에만 위임하여 Latch 방지.
+
+### 🧪 검증 및 디버깅 요약
+* 🚨 **디버깅:** 대기 방에서의 1-Clock 레이턴시 버블 및 조합회로 출력 제어로 인한 Deadlock 위험 수정  
+  👉 [`troubleshooting.md` Issue #05, #06 바로가기](troubleshooting.md#2-axi4-lite-slave-ip-write--read-channels)
+
+---
+
+## 📅 [2026-07-09] Write Strobe (`wstrb`) 제어 및 PPA 최적화
+
+### 🎯 주요 달성 목표
+- [x] AXI4-Lite Write Byte Strobe (`wstrb`) 제어 로직 구현
+- [x] 데이터 선입력 시 가비지 데이터 오염 차단 버퍼 구조 수립
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+* **4-bit Strobe Buffer (`buf_wstrb`) 도입:** 데이터 사전 도착 시 스트롭 신호도 함께 가두어 주소 도착 시 유효 바이트만 안전 디코딩.
+* **0-Mux 트리 최적화:** 큰 갈래는 주소 `case`문으로 묶되, 내부 사물함 제어는 4개의 독립 `if`문으로 배치하여 플립플롭 `CE` 핀 직결 유도 ($F_{max}$ 마진 사수).
+
+### 🧪 검증 및 디버깅 요약
+* 🚨 **디버깅:** Data-First 수신 시 쓰기 스트롭 가비지 데이터 오염 차단  
+  👉 [`troubleshooting.md` Issue #07 바로가기](troubleshooting.md#2-axi4-lite-slave-ip-write--read-channels)
+
+---
+
+## 📅 [2026-07-17] Register Map 및 Read Channel Split Transaction 설계
+
+### 🎯 주요 달성 목표
+- [x] Zero-Latency Write 기입 및 `slv_reg_0`~`3` Register File 탑재
+- [x] AR (Read Address) 및 R (Read Data) 독립 채널 Split Transaction FSM 구축
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+* **Read Channel Latency 은닉:** 주소 캡처와 데이터 출력을 완전 분리하여 물리적 읽기 지연 은닉 및 파이프라이닝 대역폭 확보.
+* **2-Block FSM & Registered Output:** 버스 응답 신호(`s_bvalid`, `s_bresp`)의 STA $T_{co}$ 마진 및 글리치 차단 분석 완료.
+
+---
+
+## 📅 [2026-07-21] Task 기반 BFM Testbench 구축 및 Write Corner Case 검증
+
+### 🎯 주요 달성 목표
+- [x] SystemVerilog Task 기반 BFM (Bus Functional Model) Driver 및 Self-Checking 구축
+- [x] Write 채널 3가지 타이밍 코너 케이스 (Simultaneous, Address-First, Data-First) 검증 완료
+
+### 🛠️ 검증 아키텍처
+* **`fork...join` 병렬 스레드 구동:** 비동기 AW/W 채널 수거를 독립 스레드로 동시 실행하여 슬레이브 `ready` 순서 상관없이 데드락 차단.
+* **Level/Edge 2단계 동기화:** `wait(ready)` 전압 감지 후 `@(posedge clk)` 상승 에지 대기를 결합하여 Race Condition 방지.
+
+---
+
+## 📅 [2026-07-22] SystemVerilog 마이그레이션 & Watchdog Deadlock 방지
+
+### 🎯 주요 달성 목표
+- [x] Complete Write Transaction을 위한 B Channel (`BVALID`/`BREADY`) 핸드셰이크 통합
+- [x] Testbench 시뮬레이션 무한 정지 방지용 Watchdog 타이머 구축
+
+### 🛠️ 검증 아키텍처
+* **100-Clock Watchdog Timer:** `fork...join_any` 및 `disable fork` 구문으로 타임아웃 발생 시 에러 출력 후 안전 탈출 로직 내장.
+
+---
+
+## 📅 [2026-07-27] Delta Cycle Glitch 해결 및 B Channel FSM 디버깅
+
+### 🎯 주요 달성 목표
+- [x] Pre-asserted `bready` 환경에서의 Delta Cycle (0ns Glitch) 유령 신호 현상 규명 및 수정
+- [x] AXI4-Lite Complete Write Transaction 완결 (`BRESP = 2'b00` OKAY 확인)
+
+### 🧪 검증 및 디버깅 요약
+* 🚨 **디버깅:** Delta Cycle Glitch 및 Pre-asserted BREADY Overwrite 버그 해결  
+  👉 [`troubleshooting.md` Issue #10 바로가기](troubleshooting.md#4-testbench--verification-environment)
+
+---
+
+## 📅 [2026-07-28] Testbench Delay Case 대응 & Moore-style FSM 최적화
+
+### 🎯 주요 달성 목표
+- [x] Testbench $0\text{ns}$ 신호 초기화(`X` 상태 제거) 및 Handshake De-assertion (1-Shot 법칙) 적용
+- [x] Write Transaction Teardown 및 복귀 후 데이터 보존 검증 완료
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+* **Moore 스타일 2-Block FSM 확립:** Mealy 스타일 조건문 내 출력 할당을 제거하고, `always_comb`에서 오직 `curr_state == WRESP`일 때만 `s_bvalid = 1`을 내보내어 1-Clock Pulse Glitch 제거.
+
+### 🧪 검증 및 디버깅 요약
+* 🚨 **디버깅:** Intentional Delay 주입 시 TB 순차 대기 Deadlock 수정  
+  👉 [`troubleshooting.md` Issue #11 바로가기](troubleshooting.md#4-testbench--verification-environment)
+
+---
+
+## 📅 [2026-07-29] Write Corner Case 완벽 정복 & Read RTL/TB 진입
+
+### 🎯 주요 달성 목표
+- [x] Write 채널 예외 처리 검증 (Address-first 억제, Backpressure 3-clock Hold, Back-to-Back 1-bubble)
+- [x] Read Channel 2-Block FSM RTL 작성 및 SystemVerilog Read Task (`output` 반환) 모듈화
+
+### 🧪 검증 및 디버깅 요약
+* 🚨 **디버깅:** 동작 중 Reset 인가 시 Testbench Hang (Level Wait Trap) 해결  
+  👉 [`troubleshooting.md` Issue #12 바로가기](troubleshooting.md#4-testbench--verification-environment)
+
+---
+
+## 📅 [2026-07-30] Read Channel 타이밍 버그 해결 & RRESP SLVERR 설계
+
+### 🎯 주요 달성 목표
+- [x] Read Valid-Data Mismatch 버그 수정 및 정석 1-Cycle Read Latency 구현
+- [x] AXI RRESP 2비트 상태 코드 분석 및 Address Aliasing 경계 체크 (`SLVERR 2'b10`) 로직 설계
+
+### 🧪 검증 및 디버깅 요약
+* 🚨 **디버깅:** Read Channel Valid-Data Mismatch 및 Delta Cycle 캡처 오류 해결  
+  👉 [`troubleshooting.md` Issue #08 바로가기](troubleshooting.md#2-axi4-lite-slave-ip-write--read-channels)
+
+---
+
+## 📅 [2026-08-03] 시스템 통합 로드맵 수립 및 UART-to-AXI Bridge FSM 구조 설계
+
+### 🎯 주요 달성 목표
+- [x] Top 통합부터 Cmod A7 FPGA 보드 검증까지의 5단계 Full-Chain 로드맵 정립
+- [x] UART-to-AXI Bridge 명령어 디코딩('W'/'R') 및 6-State FSM 데이터패스 설계
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+* **`rx_done` 동기화 Concatenation Shift:** `rx_done` 상승 에지 시점에만 `{addr_reg[23:0], rx_data}` 시프트 수신.
+* **Master 주도적 VALID Assertion:** Slave의 Ready를 기다리지 않고 데이터 준비 즉시 `VALID = 1` 선제 발사로 Deadlock 방지.
+
+---
+
+## 📅 [2026-08-04] UART-to-AXI Bridge Read Path 4-State FSM & 2단계 핸드셰이크 정립
+
+### 🎯 주요 달성 목표
+- [x] Read Path 중심 4-State FSM (`IDLE`, `RX_ADDR`, `AXI_READ`, `TX_RESP`) 뼈대 구축
+- [x] `ar_done` 플래그 기반 AR 채널 $\rightarrow$ R 채널 2단계 순차 핸드셰이크 제어 로직 완성
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+* **Zero-Latency Output Assertion:** `assign m_axi_arvalid = (state == AXI_READ) && (!ar_done);`로 상태 진입과 동시에 AXI 신호 즉시 발사.
+* **`rx_done` 역할 제한:** 1클럭 펄스인 `rx_done`을 상태 전이 트리거로만 제한하여 AXI Valid 조기 해제 버그 차단.
+
+### 🧪 검증 및 디버깅 요약
+* 🚨 **디버깅:** `rx_done` 펄스 오남용으로 인한 AXI `arvalid` 조기 De-assertion 버그 수정  
+  👉 [`troubleshooting.md` Issue #09 바로가기](troubleshooting.md#3-uart-to-axi-bridge-ip)
+
+---
+
+## 📅 [2026-08-06] UART-to-AXI Bridge RTL 디버깅, AXI Write FSM 완결 및 Top-Level 구조 설계
+
+### 🎯 주요 달성 목표
+- [x] `bridge_uart_to_axi` RTL 버그 정밀 디버깅 및 Read/Write 채널 동작 완결
+- [x] AXI Write Strobe (`wstrb`), Protection (`awprot`/`arprot`), AW/W 독립 핸드셰이크 플래그 적용
+- [x] RTL 타이밍 메커니즘(Non-blocking 1-clock delay, CDC 방지 2-Stage Synchronizer) 정리
+- [x] Top-Level 통합 모듈(`system_top.v`) 3단 연결 및 외부 포트(4-pin) 캡슐화 설계
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+
+* **Read/Write 채널 버스 신호 정형화 및 Latch 방지**
+  * `m_axi_arprot` 및 `m_axi_awprot` 기본값을 `3'b000`으로 명시 선언하여 시뮬레이션 파형 상의 $X$ (Unknown) 신호 상쇄.
+  * 조합회로 `always @(*)` 최상단에 `tx_data = 8'h00` 디폴트 할당을 추가하여 Latch 생성 원천 차단.
+  * `busy_d <= tx_busy` 1클럭 지연 추적 구문을 `case`문 외부로 상시 추출하여 FSM 상태와 독립적으로 정확한 Edge Detection 구현.
+
+* **Write Path 데이터 수신 및 AXI Write Strobe 활성화**
+  * `RX_DATA` 상태 내 매 클럭 무한 리셋 버그 수정 후, 32비트 Shift Concatenation 연산(`{data_reg[23:0], rx_data}`) 및 바이트 카운터 정형화.
+  * `m_axi_wstrb` 기본값을 `4'b0000`에서 `4'b1111` (`4'hF`)로 수정하여 슬레이브 레지스터/메모리로의 실제 기입 활성화.
+  * `aw_done`, `w_done` 레지스터 플래그를 도입하여 AW/W 채널의 비동기 완료 순서에 대응하고, Write 트랜잭션 종료 시 `cnt_resp <= 2'd0` 초기화 추가.
+
+* **Top-Level (`system_top.v`) 계층 구조 캡슐화**
+  * `uart_top` $\leftrightarrow$ `bridge_uart_to_axi` $\leftrightarrow$ `axi_slave` 3단 파이프라인 바인딩 완료.
+  * 외부 포트를 최솟값인 **4개 핀 (`clk`, `rst_n`, `rx`, `tx`)**으로 집약하고, 내부 AXI4-Lite 버스 및 핸드셰이크 신호선은 `wire`로 캡슐화.
+
+### 🧪 검증 및 디버깅 요약
+
+* **RTL 타이밍 & CDC 메커니즘 정립:**
+  * **Non-blocking (`<=`) 지연:** 순차 논리(D-FF) 간 신호 전달 시 1클럭 지연(1-Clock Delay)이 발생하며, 이를 거친 신호가 조합 논리를 통과할 때는 동일 클럭 주기 내에 즉시 연산 반영됨을 파형 관점에서 명확히 규명.
+  * **Clock Domain & CDC 방지:** 전체 시스템을 단일 100MHz 클럭 도메인으로 통합하고, 외부 야생의 비동기 `rx` 입력만 맨 앞단에서 **2-Stage Synchronizer (Double Flopping)**로 가두어 메타스테빌리티(Metastability) 방어 전략 수립.
+* 🚨 **디버깅:** RX_DATA 상태 탈출 조건 오기(`cnt_addr` $\rightarrow$ `cnt_data == 2'd3`) 정정, `m_axi_wstrb` 미인가 버그 및 `m_axi_arprot`/`awprot` $X$ 신호 상쇄 완료.
