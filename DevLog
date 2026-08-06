@@ -180,3 +180,36 @@
 ### 🧪 검증 및 디버깅 요약
 * 🚨 **디버깅:** `rx_done` 펄스 오남용으로 인한 AXI `arvalid` 조기 De-assertion 버그 수정  
   👉 [`troubleshooting.md` Issue #09 바로가기](troubleshooting.md#3-uart-to-axi-bridge-ip)
+
+---
+
+## 📅 [2026-08-06] UART-to-AXI Bridge RTL 디버깅, AXI Write FSM 완결 및 Top-Level 구조 설계
+
+### 🎯 주요 달성 목표
+- [x] `bridge_uart_to_axi` RTL 버그 정밀 디버깅 및 Read/Write 채널 동작 완결
+- [x] AXI Write Strobe (`wstrb`), Protection (`awprot`/`arprot`), AW/W 독립 핸드셰이크 플래그 적용
+- [x] RTL 타이밍 메커니즘(Non-blocking 1-clock delay, CDC 방지 2-Stage Synchronizer) 정리
+- [x] Top-Level 통합 모듈(`system_top.v`) 3단 연결 및 외부 포트(4-pin) 캡슐화 설계
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+
+* **Read/Write 채널 버스 신호 정형화 및 Latch 방지**
+  * `m_axi_arprot` 및 `m_axi_awprot` 기본값을 `3'b000`으로 명시 선언하여 시뮬레이션 파형 상의 $X$ (Unknown) 신호 상쇄.
+  * 조합회로 `always @(*)` 최상단에 `tx_data = 8'h00` 디폴트 할당을 추가하여 Latch 생성 원천 차단.
+  * `busy_d <= tx_busy` 1클럭 지연 추적 구문을 `case`문 외부로 상시 추출하여 FSM 상태와 독립적으로 정확한 Edge Detection 구현.
+
+* **Write Path 데이터 수신 및 AXI Write Strobe 활성화**
+  * `RX_DATA` 상태 내 매 클럭 무한 리셋 버그 수정 후, 32비트 Shift Concatenation 연산(`{data_reg[23:0], rx_data}`) 및 바이트 카운터 정형화.
+  * `m_axi_wstrb` 기본값을 `4'b0000`에서 `4'b1111` (`4'hF`)로 수정하여 슬레이브 레지스터/메모리로의 실제 기입 활성화.
+  * `aw_done`, `w_done` 레지스터 플래그를 도입하여 AW/W 채널의 비동기 완료 순서에 대응하고, Write 트랜잭션 종료 시 `cnt_resp <= 2'd0` 초기화 추가.
+
+* **Top-Level (`system_top.v`) 계층 구조 캡슐화**
+  * `uart_top` $\leftrightarrow$ `bridge_uart_to_axi` $\leftrightarrow$ `axi_slave` 3단 파이프라인 바인딩 완료.
+  * 외부 포트를 최솟값인 **4개 핀 (`clk`, `rst_n`, `rx`, `tx`)**으로 집약하고, 내부 AXI4-Lite 버스 및 핸드셰이크 신호선은 `wire`로 캡슐화.
+
+### 🧪 검증 및 디버깅 요약
+
+* **RTL 타이밍 & CDC 메커니즘 정립:**
+  * **Non-blocking (`<=`) 지연:** 순차 논리(D-FF) 간 신호 전달 시 1클럭 지연(1-Clock Delay)이 발생하며, 이를 거친 신호가 조합 논리를 통과할 때는 동일 클럭 주기 내에 즉시 연산 반영됨을 파형 관점에서 명확히 규명.
+  * **Clock Domain & CDC 방지:** 전체 시스템을 단일 100MHz 클럭 도메인으로 통합하고, 외부 야생의 비동기 `rx` 입력만 맨 앞단에서 **2-Stage Synchronizer (Double Flopping)**로 가두어 메타스테빌리티(Metastability) 방어 전략 수립.
+* 🚨 **디버깅:** RX_DATA 상태 탈출 조건 오기(`cnt_addr` $\rightarrow$ `cnt_data == 2'd3`) 정정, `m_axi_wstrb` 미인가 버그 및 `m_axi_arprot`/`awprot` $X$ 신호 상쇄 완료.
