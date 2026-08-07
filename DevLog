@@ -213,3 +213,30 @@
   * **Non-blocking (`<=`) 지연:** 순차 논리(D-FF) 간 신호 전달 시 1클럭 지연(1-Clock Delay)이 발생하며, 이를 거친 신호가 조합 논리를 통과할 때는 동일 클럭 주기 내에 즉시 연산 반영됨을 파형 관점에서 명확히 규명.
   * **Clock Domain & CDC 방지:** 전체 시스템을 단일 100MHz 클럭 도메인으로 통합하고, 외부 야생의 비동기 `rx` 입력만 맨 앞단에서 **2-Stage Synchronizer (Double Flopping)**로 가두어 메타스테빌리티(Metastability) 방어 전략 수립.
 * 🚨 **디버깅:** RX_DATA 상태 탈출 조건 오기(`cnt_addr` $\rightarrow$ `cnt_data == 2'd3`) 정정, `m_axi_wstrb` 미인가 버그 및 `m_axi_arprot`/`awprot` $X$ 신호 상쇄 완료.
+
+---
+
+## 📅 [2026-08-07] UART Top 루프백 분리, tb_bridge 뼈대 구축 및 AXI BFM Task 설계
+
+### 🎯 주요 달성 목표
+- [x] `uart_top` 모듈 구조 전면 개선: 내부 루프백(Loopback) 제거 및 외부 `rx`, `tx` 핀 독립 분리
+- [x] `tb_bridge` 테스트벤치 뼈대 구축: `reg` (Driver) 및 `wire` (Monitor) 역할 완전 분리 선언
+- [x] AXI4-Lite `valid`/`ready` 핸드셰이크 신호의 주체와 제어 흐름 정립
+- [x] `for`문과 `#` delay 구문을 활용한 `send_byte` 및 `common_write` Verification Task 설계
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+
+* **UART Top 모듈 아키텍처 리팩토링**
+  * 기존 단독 검증용 내부 데이터 루프백(RX data $\rightarrow$ TX data 직결) 경로를 전면 해제.
+  * 외부 야생 입력 신호(`rx`)와 내부 데이터 발사선(`tx`)을 독립 포트로 완전히 분리하여, Bridge 모듈과의 양방향 인터페이스 연결 준비 완료.
+
+### 🧪 검증 아키텍처 & 메커니즘 (Verification)
+
+* **테스트벤치 (`tb_bridge`) Signal Binding & 역할 분리**
+  * **Drive 신호 (`reg`):** 테스트벤치가 주도하여 DUT로 값을 주입하는 `clk`, `rst_n`, `rx` 핀을 `reg` 타입으로 선언.
+  * **Monitor 신호 (`wire`):** DUT 내부 및 출력에서 관측되는 `tx`, AXI 버스 신호(`awvalid`, `wdata` 등)를 `wire` 타입으로 바인딩.
+  * **AXI Handshake 신호 메커니즘 정립:** Master(Bridge)가 주도하는 Output(`valid`, `addr`, `data`)과 Slave가 응답하는 Input(`ready`, `resp`)의 전송 주체 및 레벨 유지 조건 명확화.
+
+* **Task 기반 Verification Driver 모듈화**
+  * **`send_byte` Task:** `for`문 회전과 보레이트 주기 타임 슬롯(`#` delay)을 결합하여, 1비트의 Start Bit + 8비트 Data Bit + 1비트 Stop Bit를 파형에 정확히 주입하는 시리얼 바이트 생성기 작성.
+  * **`common_write` Task:** ASCII Write 명령어(`'W'`) ➡️ 4-byte Address ➡️ 4-byte Write Data를 연속 호출하는 상위 레벨 Write 트랜잭션 BFM Task 구축.
