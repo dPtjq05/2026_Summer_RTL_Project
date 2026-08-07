@@ -29,7 +29,7 @@ module uart_tx(
     
     output reg tx,
     output reg tx_busy
-    );
+    );//parellel signal -> serial signal change 송신의 역할
     reg [1:0] current_state;
     reg [1:0] next_state;
     

@@ -27,7 +27,7 @@ module uart_rx(
     input sampling_tick,
     output reg rx_done,
     output reg [7:0] dout
-    );
+    );//serial signal-> parellel signal change
     // 설계목표: rx에서 start bit를 감지해서 그 이후로 8bit의 데이터를 parallel data로 변환
     // -start 감지
     // -data 저장
