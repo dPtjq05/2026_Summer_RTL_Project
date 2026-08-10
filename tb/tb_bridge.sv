@@ -23,6 +23,8 @@
 module tb_bridge(
 
     );
+    
+    localparam bit_period = 104320;
     //logic 쓰는 거 압니다. 근데 공부하는 입장에서는 reg, wire 직접 구분하는 게 좋을 것 같아서 그렇습니다.
     wire tx_start, bready, arvalid, rready;
     wire [7:0] tx_data;
@@ -138,6 +140,9 @@ module tb_bridge(
         rst_n = 1'd0;
         rx = 1'd1;    
         #20 rst_n = 1'd1;
+        
+        common_write(8'h57, 32'h0010, 32'h0110);
+        //
     end
     
     task common_write (
@@ -145,7 +150,34 @@ module tb_bridge(
         input [31:0] addr,
         input [31:0] data
     );
+        send_byte(cmd);
         
+        send_byte(addr[31:24]);
+        send_byte(addr[23:16]);
+        send_byte(addr[15:8]);
+        send_byte(addr[7:0]);
+        
+        send_byte(data[31:24]);
+        send_byte(data[23:16]);
+        send_byte(data[15:8]);
+        send_byte(data[7:0]);
+        
+    endtask
+    
+    task send_byte(
+        input [7:0] data
+    );
+        begin
+            rx = 1'd0;
+            #bit_period;
+            for (int i =0; i< 8; i++) begin
+                rx = data[i];
+                #bit_period;
+            end
+            
+            rx = 1'd1;  //stop bit 할당
+            #bit_period;
+        end
     endtask
     
 endmodule
