@@ -240,3 +240,32 @@
 * **Task 기반 Verification Driver 모듈화**
   * **`send_byte` Task:** `for`문 회전과 보레이트 주기 타임 슬롯(`#` delay)을 결합하여, 1비트의 Start Bit + 8비트 Data Bit + 1비트 Stop Bit를 파형에 정확히 주입하는 시리얼 바이트 생성기 작성.
   * **`common_write` Task:** ASCII Write 명령어(`'W'`) ➡️ 4-byte Address ➡️ 4-byte Write Data를 연속 호출하는 상위 레벨 Write 트랜잭션 BFM Task 구축.
+
+---
+
+## 📅 [2026-08-10] UART-to-AXI Bridge End-to-End 시뮬레이션 파형 검증 및 전체 데이터패스 체계화
+
+### 🎯 주요 달성 목표
+- [x] Testbench $\rightarrow$ `uart_top` $\rightarrow$ `bridge` $\rightarrow$ `axi_slave` Full-Chain 동작 시퀀스 통합 및 체계화
+- [x] Vivado 시뮬레이션 파형 정밀 검증 ($9.326\text{ms}$ 지점 AXI Write 트랜잭션 정상 진입)
+- [x] `uart_rx` 센터 샘플링(Center Sampling) 및 `rx_done` 1-Clock Pulse 생성 메커니즘 분석
+- [x] Bridge 모듈 내 8-bit 수신 래칭, 32-bit Shift Concatenation 및 AXI 핸드셰이크 트리거 로직 정립
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+
+* **Full-Chain 시스템 데이터 흐름 체계화**
+  * `Testbench` (시리얼 패킷 주입) ➡️ `uart_top` (`uart_rx` 16x 오버샘플링 병렬 변환) ➡️ `bridge_uart_to_axi` (Byte Counter 기반 32-bit 버퍼 조립 & AXI FSM) ➡️ `axi_lite_slave` (AXI4-Lite 핸드셰이크 & 레지스터 기입) 전체 파이프라인 시퀀스 확립.
+
+* **`rx_done` 펄스 기반 Bridge 내부 데이터패스 제어**
+  * `uart_rx`가 Stop Bit 확인 직후 뿜어내는 **1-Clock Pulse (`rx_done`)**를 상태 전이 및 래칭 트리거로 활용.
+  * `rx_done` 상승 에지 타이밍에 8-bit `rx_data` 캡처 ➡️ 32-bit 결합 시프트 연산(`{reg[23:0], rx_data}`) ➡️ `byte_cnt` 인크리먼트 수행 ➡️ 주소/데이터 패킷 수신 완료 시 즉시 AXI `VALID` 신호 제어선 트리거.
+
+### 🧪 검증 및 파형 분석 (Verification & Waveform Analysis)
+
+* **Vivado End-to-End 시뮬레이션 성공 ($9.326\text{ms}$ 타임스탬프)**
+  * PC 주입 9바이트 패킷(ASCII `'W'` + 4-byte Address + 4-byte Write Data) 연속 수신 추적.
+  * $9.326\text{ms}$ 지점에서 9바이트 수신이 완결됨과 동시에 AXI Write 트랜잭션으로 성공적으로 진입함을 확인.
+  * `awaddr = 32'h0000_0010`, `wdata = 32'h0000_0110` 신호가 AXI 버스로 무결하게 래칭되고, Slave와의 `VALID`/`READY` 상호 핸드셰이크가 완결됨을 확인.
+
+* **엔지니어링 노팅 (Engineering Noting) 습관 체계화**
+  * Vivado 파형 타임라인 분석과 동작 메커니즘 텍스트 기록을 연동하여, 타이밍 마진 파악의 정밀도 향상 및 포트폴리오(README/DevLog) 질적 수준 제고.
