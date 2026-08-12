@@ -269,3 +269,68 @@
 
 * **엔지니어링 노팅 (Engineering Noting) 습관 체계화**
   * Vivado 파형 타임라인 분석과 동작 메커니즘 텍스트 기록을 연동하여, 타이밍 마진 파악의 정밀도 향상 및 포트폴리오(README/DevLog) 질적 수준 제고.
+
+---
+
+## 📅 [2026-08-11] UART RX FSM 수신, Big-Endian 데이터 조립 및 AXI4-Lite Write 디버깅
+
+### 🎯 주요 달성 목표
+- [x] UART RX `8'h57`('W') 명령어 수신 및 `rx_done` 1-Clock Pulse 기반 FSM State 0 ➔ 1 전이 검증
+- [x] Big-Endian 바이트 수신(MSB ➔ LSB) 데이터패스 및 주소/데이터 레지스터 래칭 검증
+- [x] AXI4-Lite Slave `bresp` 2'b00(OKAY) 응답 드라이브 정정 및 Z/EXOKAY 반환 오류 수정
+- [x] Valid-Address/Data 동시 래칭 시 Red X(Setup Time) 현상 해결 및 FSM 무한 토글 방지
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+
+* **UART RX Midpoint Sampling & Synchronous 1-Clock Pulse**
+  * Baud Rate Generator 타임스탬프 기반 비트 정중앙(Midpoint)에서 데이터 샘플링을 수행하여 마지막 데이터 비트 수신 시점에 `rx_data = 8'h57` ('W') 확정.
+  * Stop Bit 정중앙 감지 직후 `rx_done` 신호가 정확히 1 시스템 클럭 주기(`1-Clock Pulse`) 동안만 Assert되는 동기식 펄스 동작 검증.
+  * `rx_done == 1` 트리거 시점에 `cmd_reg <= 8'h57` 캡처 완료 후, 다음 클럭 상승 에지(`posedge clk`)에서 FSM State 0 ➔ 1 에러 없이 정상 천이.
+
+* **Big-Endian 32-bit Concatenation Datapath & 가독성 개선**
+  * 시뮬레이션 파형 가독성을 위해 TB 주소를 `32'h1001_0010`으로 확장 적용 (`_` 언더바 포맷팅 활용).
+  * 32비트 바이트 스트림 수신 시 `cnt_data` 카운터에 맞춰 상위 바이트(MSB)부터 하위 바이트(LSB) 순서로 차곡차곡 래칭되는 Big-Endian 데이터 조립 입증 (`10` ➔ `01` ➔ `00` ➔ `10`).
+  * 주소 수신 후 State 2 진입 및 데이터 수신 단계인 State 3으로의 연속 FSM 전이 확인.
+
+* **AXI4-Lite Write Channel Parallel Driving**
+  * AXI4-Lite 규격상 독립 채널인 AW(Write Address) 채널과 W(Write Data) 채널의 `VALID` 신호를 Bridge에서 동시에 드라이브하여 동시 핸드셰이크를 수행하는 정석 구조 타당성 검증.
+
+### 🧪 검증 및 디버깅 요약 (Troubleshooting & Verification)
+
+| 문제 현상 | 원인 분석 | 해결 및 RTL 수정 내용 |
+| :--- | :--- | :--- |
+| **`bresp[1:0]` 응답 오류** | `bresp`가 Floating(`Z`)으로 출력되거나 미지원 값인 `2'b01` (EXOKAY)로 반환됨. | Slave RTL 내 쓰기 완료 조건에서 `s_axi_bresp`를 **`2'b00` (OKAY)**으로 명시적 드라이브 설정 및 Top 포트 연결 재검점. |
+| **`buf` 레지스터 Red X (Unknown) 래칭** | `awaddr`/`wdata` 신호가 버스에 실리는 시점과 `VALID` 신호가 올라가는 클럭 에지가 동일하여 Non-blocking(`<=`) 평가 시 이전 X 값이 래칭됨. | `s_awvalid` / `s_wvalid` 신호를 Assert하기 최소 1클럭 전(또는 동시 조합 논리)에 주소/데이터 버스 값이 완전히 Settlement 되도록 타임라인 조절. |
+| **FSM State 0 ↔ 3 무한 토글** | `bresp` 오류 및 Handshake 완료 후 시작 신호/`VALID` 신호가 Clear되지 않아 FSM이 재진입함. | `bvalid && bready && bresp == 2'b00` 확인 직후 `s_awvalid`, `s_wvalid` 및 내부 Start 펄스 신호를 `0`으로 즉시 De-assert 하도록 로직 보완. |
+
+---
+
+## 📅 [2026-08-12] AXI Write Response Timing 동기화, VALID De-assertion 이벤트 폭탄 해결 및 Master FSM Latching 교정
+
+### 🎯 주요 달성 목표
+- [x] AXI4-Lite Write Response (`bresp`) 신호 및 `bvalid` 타이밍 1-Clock Mismatch 동기화
+- [x] $9.33\text{ms}$ 지점 시뮬레이션 Freeze/Hang 원인 규명 (VALID 미해제로 인한 무한 쓰기 Oscillation 차단)
+- [x] Master FSM (`STATE_AXI_WRITE` ➔ `STATE_RX_RESP` ➔ `IDLE`) 상태 전이 및 `aw_done`/`w_done` Latching 로직 교정
+- [x] UART TX 하강 에지 감지기 (`flag_resp`) 동작 메커니즘 및 IDLE 복귀 트리거 재검증
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+
+* **AXI4-Lite `bresp` - `bvalid` 0-Cycle Alignment**
+  * Slave FSM에서 `bvalid = 1`을 Assert하는 첫 클럭 에지 타이밍과 `bresp = 2'b00` (OKAY) 세팅 타임라인을 완벽히 동기화하여, Master FSM이 응답을 인식하지 못하고 지나치는 1클럭 타이밍 미스매치 상쇄.
+
+* **VALID Signal 1-Shot De-assertion & Oscillation 차단**
+  * Master(`bridge`) 주도의 `s_awvalid`, `s_wvalid` 신호를 핸드셰이크 성사 직후 및 IDLE 상태에서 즉시 `0`으로 De-assert(잠금)하도록 제어 로직 보완.
+  * $9.33\text{ms}$ 시점 AXI Write 트랜잭션 완료 후 매 클럭(100MHz)마다 무한 쓰기 요청이 발생하는 이벤트 폭탄(Oscillation) 및 시뮬레이션 멈춤 현상 근본 차단.
+
+* **Master FSM Done Signal Latch Hold & State 5 (`STATE_RX_RESP`) 전이 로직 개편**
+  * `aw_done` 및 `w_done` 플래그가 VALID De-assertion 시점에 조기 꺼지지 않고 FSM이 State 5(`STATE_RX_RESP`)로 완전히 진입할 때까지 `1`을 안전하게 유지(Hold)하도록 래칭 구조 정돈.
+  * State 5 내부의 불필요한 `done` 중복 조건문을 제거하고, 오직 `bvalid && bready && (bresp == 2'b00)` 조건만 단독 감지하여 안전하게 `IDLE` 상태로 복귀하도록 FSM 상태 전이 트리거 정제.
+
+* **UART TX Falling Edge Detector (`flag_resp`) 메커니즘 정립**
+  * `assign flag_resp = (busy_d && !tx_busy);` 구문이 UART TX 송신 완료 찰나의 순간을 정밀 캡처하는 1-Clock Pulse 하강 에지 감지기(Falling Edge Detector)임을 복습.
+  * 응답 송신 완료 신호를 FSM에 전달하여 안전하게 `IDLE` 상태로 복귀시키는 최종 트리거로 확정.
+
+### 🧪 검증 및 디버깅 요약 (Troubleshooting & Verification)
+
+* **수십 ns 단위 파형 정밀 모니터링:**
+  * VALID-READY 핸드셰이크 시점의 1클럭 펄스 타이밍 엇박자 및 Master FSM 데드락(State 3 `STATE_AXI_WRITE` ➔ State 5 `STATE_RX_RESP` 천이 길목 정체) 원인을 핀셋 감지로 규명하고, RTL 타이밍 및 FSM Latching 수정을 통해 최종 해결 완료.

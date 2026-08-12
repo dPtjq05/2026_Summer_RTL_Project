@@ -81,3 +81,31 @@
 * **관련 이미지 주소**: <img width="940" height="689" alt="Image" src="https://github.com/user-attachments/assets/f519c534-aaa8-4b39-9b21-9e551c7a1abb" />
 * **현상 및 분석**: 1에서 2로 상태가 넘어가는 과정에서 셋업 타임을 확보하지 못해 `tx` 출력선으로 데이터가 깨져서 전달되는 듯한 가짜 타이밍 버그 의심 상황 발생[cite: 3].
 * **오해 해결 및 결론**: 파형을 세부 확대하여 데이터 경로를 정밀 역추적한 결과, UART 표준 프로토콜 규격에 따라 데이터의 **LSB(최하위 비트)부터 순서대로 정상 출력**해 주고 있기 때문에 위상이 밀려 보였던 것일 뿐, 실제로는 하드웨어 데이터 유실 없이 무결하게 값이 전달되고 있음을 최종 확정[cite: 3].
+
+---
+
+### 📅 [Log #11] UART-to-AXI Bridge End-to-End AXI Write 파형 검증 (9.326ms 타임스탬프)
+* **관련 이미지 주소**: <img width="861" height="443" alt="Image" src="https://github.com/user-attachments/assets/0f55e414-950f-4f35-9d3f-1d003e2cfcd4" />
+* **현상 및 분석**: Testbench에서 인가한 9바이트 패킷(ASCII `'W'` + 4-byte Address + 4-byte Write Data)이 `uart_top`을 거쳐 Bridge 모듈에 차곡차곡 수신되는 전체 데이터패스 추적. $9.326\text{ms}$ 타임스탬프 지점에서 9바이트 수신 완결 직후 AXI Write 트랜잭션으로 성공적으로 진입하는 파형 모니터링.
+* **검증 결과**: `awaddr = 32'h0000_0010`, `wdata = 32'h0000_0110` 신호가 AXI 버스로 유실 없이 래칭되고, Slave와의 `VALID`/`READY` 상호 핸드셰이크가 정밀하게 완결됨을 확인하여 Full-Chain 동작 최종 증명.
+
+---
+
+### 📅 [Log #12] UART RX Midpoint Sampling 및 rx_done 동기식 1클럭 펄스 검증
+* **관련 이미지 주소**: <img width="803" height="403" alt="image" src="https://github.com/user-attachments/assets/0071be6b-be9a-44d8-8118-048e14b6a3f3" />
+* **현상 및 분석**: Baud Rate Generator 타임스탬프 기준 비트 정중앙(Midpoint)에서 데이터 샘플링 시 `rx_data = 8'h57` ('W')으로 확정되는 시점 분석. Stop Bit 정중앙 감지 직후 `rx_done` 신호의 토글 동작 포착.
+* **검증 결과**: `rx_done` 신호가 정확히 1 시스템 클럭 주기(Single-cycle Pulse) 동안만 Assert됨을 확인. `rx_done == 1` 트리거 시점에 `cmd_reg <= 8'h57` 래칭 완료 후, 다음 클럭 상승 에지(`posedge clk`)에서 `current_state`가 0에서 1로 에러 없이 정상 천이됨을 최종 입증.
+
+---
+
+### 📅 [Log #13] Big-Endian 32-bit Shift Concatenation 수신 파형 검증
+* **관련 이미지 주소**:<img width="940" height="347" alt="image" src="https://github.com/user-attachments/assets/2cd2e2cc-6b56-40cc-9678-4e025738c234" />
+* **현상 및 분석**: 32비트 주소 및 데이터 수신 과정에서 `cnt_data` 카운터 변화와 `data_reg` 버스 값의 갱신 타임라인 정밀 모니터링 (`32'h1001_0010` 인가 시나리오).
+* **검증 결과**: 수신되는 바이트 스트림이 상위 바이트(MSB)부터 하위 바이트(LSB) 순서(`10` ➔ `01` ➔ `00` ➔ `10`)로 차곡차곡 시프트 결합(`{data_reg[23:0], rx_data}`)되는 Big-Endian 수신 방식을 파형 상에서 증명. 주소 수신(State 2) 및 데이터 수신(State 3)으로의 연속 FSM 천이 완료.
+
+---
+
+### 📅 [Log #14] AXI Write Transaction 디버깅 및 Handshake De-assertion 파형 검증
+* **관련 이미지 주소**:<img width="728" height="321" alt="image" src="https://github.com/user-attachments/assets/7bcead4c-5513-48f1-b826-493ff192e3ea" />
+* **현상 및 분석**: AXI Write 수행 시 발생했던 Red X (`32'hXXXX_XXXX`) 래칭, `bresp` Floating (`Z`) 및 FSM State 0 ↔ 3 무한 토글 현상의 원인을 파형 상의 클럭 에지 단위로 역추적.
+* **오해 해결 및 결론**: Bus Data 사전 Settlement 조치로 Setup Time 시차에 의한 Red X 래칭을 상쇄하였으며, `s_axi_bresp = 2'b00` (OKAY) 명시적 할당 및 핸드셰이크 직후 `s_awvalid`/`s_wvalid`를 즉시 De-assert 하도록 수정하여 1-Shot 법칙 준수 및 FSM 정상 복귀 파형 최종 확정.
