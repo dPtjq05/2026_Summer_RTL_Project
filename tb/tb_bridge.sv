@@ -32,6 +32,7 @@ module tb_bridge(
     wire awvalid, wvalid;
     wire [2:0] awprot, arprot;
     wire [3:0] wstrb;
+    //wire->output 
     
     reg clk, rst_n, rx;
     wire [1:0] bresp, rresp;
@@ -141,7 +142,7 @@ module tb_bridge(
         rx = 1'd1;    
         #20 rst_n = 1'd1;
         
-        common_write(8'h57, 32'h0010, 32'h0110);
+        common_write(8'h57, 32'h1001_0010, 32'h1100_0110);
         //
     end
     
@@ -152,15 +153,15 @@ module tb_bridge(
     );
         send_byte(cmd);
         
-        send_byte(addr[31:24]);
-        send_byte(addr[23:16]);
-        send_byte(addr[15:8]);
-        send_byte(addr[7:0]);
+        send_byte(addr[31:24]); //10
+        send_byte(addr[23:16]); //01
+        send_byte(addr[15:8]);  //00
+        send_byte(addr[7:0]);   //10
         
-        send_byte(data[31:24]);
-        send_byte(data[23:16]);
-        send_byte(data[15:8]);
-        send_byte(data[7:0]);
+        send_byte(data[31:24]); //11
+        send_byte(data[23:16]); //00
+        send_byte(data[15:8]);  //01
+        send_byte(data[7:0]);   //10
         
     endtask
     

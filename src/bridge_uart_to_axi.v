@@ -109,7 +109,7 @@ module bridge_uart_to_axi(
                         cmd_reg <= rx_data; //내부 reg에 read, write 신호라는 것을 저장.
                     end
                 end
-                RX_ADDR: begin
+                RX_ADDR: begin  //state=1;
                     if (rx_done) begin
                         addr_reg <= {addr_reg[23:0], rx_data};
                         if (cnt_addr == 2'd3) begin
@@ -124,7 +124,7 @@ module bridge_uart_to_axi(
                     end
                 end
                 
-                RX_DATA:begin
+                RX_DATA:begin       //state = 2;
                     
                     if (rx_done) begin
                         data_reg <= {data_reg[23:0],rx_data};
@@ -140,7 +140,7 @@ module bridge_uart_to_axi(
                     end
                 end
                 
-                AXI_READ: begin
+                AXI_READ: begin     //state =4;
                     m_axi_araddr <= addr_reg;
                     
                     if (!ar_done) begin
@@ -163,7 +163,7 @@ module bridge_uart_to_axi(
                     end
                 end
                 
-                AXI_WRITE: begin
+                AXI_WRITE: begin    //state =3;
                     m_axi_awaddr <= addr_reg;
                     m_axi_wdata <= data_reg;
                     if (!aw_done) begin
@@ -183,6 +183,7 @@ module bridge_uart_to_axi(
                             aw_done <= 1'd0;
                             w_done <= 1'd0;
                             cnt_resp <= 2'd0;
+                           
                             if (m_axi_bresp == 2'b00) begin
                                 
                             end
@@ -193,6 +194,7 @@ module bridge_uart_to_axi(
                 end
                 
                 TX_RESP: begin
+                    
                     if (flag_resp) begin    
                         if (cnt_resp == 2'd3) begin
                             cnt_resp <= 2'd0;
@@ -217,14 +219,14 @@ module bridge_uart_to_axi(
         tx_start = 1'd0;
         tx_data = 8'h00;
         case (current_state)
-            IDLE: begin
+            IDLE: begin //state = 0;
                 if ((rx_done ==1'd1)&& ((rx_data==CMD_READ)||(rx_data == CMD_WRITE))) begin
                     next_state = RX_ADDR;
                 end
                 else next_state = IDLE;
             end
             
-            RX_ADDR: begin
+            RX_ADDR: begin  //state =1;
                 if (rx_done) begin
                     if (cnt_addr == 2'd3) begin
                         if (cmd_reg == CMD_READ) begin
@@ -265,19 +267,19 @@ module bridge_uart_to_axi(
                 end
             end
             
-            AXI_WRITE: begin
+            AXI_WRITE: begin    //state =3
                 m_axi_awvalid = (!aw_done);
                 m_axi_wvalid = (!w_done);
                 m_axi_bready = (w_done && aw_done);
                 
                 if (aw_done&& w_done) begin
-                    if (m_axi_bvalid && m_axi_bready) begin
+                    if (m_axi_bvalid && m_axi_bready) begin //여기서 bresp가 다음 클러겡 0으로 넘어가는 바람에 다음 state로 못 넘어가는 거 같은데.
                         if (m_axi_bresp == 2'b00) next_state = TX_RESP;
                     end
                 end
             end
             
-            TX_RESP: begin
+            TX_RESP: begin  //state 5;
                 if (!tx_busy) tx_start = 1'd1;
                 case (cnt_resp)
                     2'd0: tx_data = data_reg[31:24];

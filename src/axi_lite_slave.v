@@ -50,7 +50,7 @@ output reg s_awready,
 output reg s_wready,
 
 output reg s_bvalid,
-output reg s_bresp,
+output reg [1:0] s_bresp,
 
 output reg s_arready,
 
@@ -95,13 +95,9 @@ output reg [1:0] s_rresp
             
             
             s_bvalid <= 1'd0;
-            s_bresp <= 1'd0;
-            
-            
+            s_bresp <= 2'b00;
             
             s_rvalid <= 1'd0;
-            
-            
             
             buf_wdata <= 32'd0;
             buf_awaddr <= 32'd0;
@@ -115,10 +111,11 @@ output reg [1:0] s_rresp
             w_current_state <= w_next_state;
             r_current_state <= r_next_state;
             s_bvalid <= 1'd0;   //fix: combinational logic에 적으면 덮어쓰기 오류가 나서 sequential logic으로 구현함.
-            s_bresp <= 1'd0;
+            s_bresp <= 2'b00;
         
             case (w_current_state)
                 WIDLE: begin    //동시에 handshake가 발생하는 선행 조건을 추가해서 데이터를 버퍼에 저장하지 않고 바로 들어가도록 설계.
+                    
                     if (s_wvalid && s_wready && s_awvalid && s_awready) begin
                         case (s_awaddr[3:2])
                             2'b00: begin
@@ -226,13 +223,15 @@ output reg [1:0] s_rresp
                 
                 end
                 WRESP: begin    //fix: delta cycle error를 방지 하기 위해서 bvalid, bresp 신호를 sequential logic으로 바꿈.
+                       //bresp 신호가 bvalid가 1로 튈 때 정상 작동하도록 고쳐줌.
                     if (s_bready && s_bvalid) begin
                         s_bvalid <= 1'd0;
-                        s_bresp <= 1'd0;
+                        s_bresp <= 2'b00;
+    
                     end
                     else begin
                         s_bvalid <= 1'd1;
-                        s_bresp <= 1'd1;
+                        s_bresp <= 2'b00;
                     end
                 end
             endcase
@@ -281,6 +280,7 @@ output reg [1:0] s_rresp
             WIDLE: begin
                 s_wready = 1'b1;
                 s_awready = 1'b1;
+               
                 if (s_wvalid && s_awvalid) begin
                     w_next_state = WRESP;   //대기 상태로 넘어갈 필요 없이 바로 RESP로 넘어간다.
                 end
