@@ -87,7 +87,7 @@ module bridge_uart_to_axi(
     wire flag_resp;  //resp에서 pulse를 담당.
     reg busy_d; // busy 신호의 1클럭 delay.
     
-    assign flag_resp = (busy_d && !tx_busy);
+    assign flag_resp = (busy_d && (!tx_busy));
     
     always@ (posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -194,7 +194,6 @@ module bridge_uart_to_axi(
                 end
                 
                 TX_RESP: begin
-                    
                     if (flag_resp) begin    
                         if (cnt_resp == 2'd3) begin
                             cnt_resp <= 2'd0;

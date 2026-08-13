@@ -33,14 +33,9 @@ module uart_tx(
     reg [1:0] current_state;
     reg [1:0] next_state;
     
-    reg [7:0] current_reg_data;
-    reg [7:0] next_reg_data;
-    
-    reg [3:0] current_cnt_t;
-    reg [3:0] next_cnt_t;
-    
-    reg [2:0] next_cnt_d;
-    reg [2:0] current_cnt_d;
+    reg [7:0] reg_data;
+    reg [3:0] cnt_t;
+    reg [2:0] cnt_d;
     
     localparam IDLE = 2'b00;
     localparam START = 2'b01;
@@ -49,93 +44,126 @@ module uart_tx(
     
     always@ (posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            
+            tx <= 1'd1;
+            tx_busy <= 1'd0;
+        
             current_state <= IDLE;
-            current_reg_data <= 8'd0;
-            current_cnt_t <= 4'd0;
-            current_cnt_d <= 3'd0;
+            reg_data <= 8'd0;
+            cnt_t <= 4'd0;
+            cnt_d <= 3'd0;
         end
         else begin
             current_state <= next_state;
-            current_cnt_t <= next_cnt_t;
-            current_cnt_d <= next_cnt_d;
-            current_reg_data <= next_reg_data;
+            
+            case (current_state)
+                IDLE: begin
+                    if (start) begin
+                        cnt_d <= 3'd0;
+                        tx <= 1'd0;
+                        tx_busy <= 1'd1;
+                        reg_data <= tx_data;
+                    end
+                    else begin
+                        tx <= 1'd1;
+                        tx_busy <= 1'd0;
+                    end
+                end
+                
+                START: begin
+                    tx <= 1'd0;
+                    tx_busy <= 1'd1;
+                    if (sampling_tick) begin
+                        if (cnt_t == 4'd15) begin
+                            cnt_t <= 4'd0;
+                        end
+                        else begin
+                            cnt_t <= cnt_t + 4'd1;
+                        end
+                    end
+                end
+                
+                DATA: begin
+                    
+                    if (sampling_tick) begin
+                        if (cnt_t == 4'd15) begin
+                            cnt_t <= 4'd0;
+                            if (cnt_d == 3'd7) begin
+                                cnt_d <= 3'd0;
+                            end
+                            else begin
+                                cnt_d <= cnt_d + 3'd1;
+                                
+                            end
+                            
+                        end
+                        else begin
+                            cnt_t <= cnt_t + 4'd1;
+                        end
+                        
+                        
+                    end
+                end
+                
+                STOP: begin
+                    tx_busy <= 1'd1;
+                    if (sampling_tick) begin
+                        if (cnt_t == 4'd15) begin
+                            cnt_t <= 4'd0;
+                        end
+                        else begin
+                            cnt_t <= cnt_t + 4'd1;
+                        end
+                    end
+                end
+                
+            endcase
         end
     end
     
     always@(*) begin
         next_state = current_state;
-        next_cnt_d = current_cnt_d;
-        next_cnt_t = current_cnt_t;
-        next_reg_data = current_reg_data;
-        
-        tx = 1'd1;
-        tx_busy = 1'd1;
-        
         //combinational logic에서 의도치 않은 latch 생성을 막기 위함.
-        
         case (current_state)
             IDLE: begin
+                tx = 1'd1;
                 if (start) begin
-                    next_reg_data = tx_data;
                     next_state = START;
-                    next_cnt_d = 3'd0;
                 end
                 else begin
-                    tx = 1'd1;
-                    tx_busy = 1'd0;
+                    next_state = IDLE;
                 end
             end
             
             START: begin
                 tx = 1'd0;
-                tx_busy = 1'd0;
-                if (sampling_tick) begin
-                    if (current_cnt_t == 4'd15) begin
-                        next_state = DATA;
-                        next_cnt_t = 4'd0;
-                        
-                    end
-                    else begin
-                        next_cnt_t = current_cnt_t + 4'd1;
-                    end
-                end
+                if(sampling_tick) begin
+                    if (cnt_t == 4'd15) begin
+                       next_state = DATA;
+                    end    
+                end  
             end
             
             DATA: begin
-                
-                tx = next_reg_data [current_cnt_d]; //-- LATCH를 방지하기 위함.
+                //-- LATCH를 방지하기 위함.
                 // 여기에 더 쓸 게 없나?
+                tx = reg_data[cnt_d];
                 if(sampling_tick) begin
-                    if (current_cnt_t == 4'd15) begin
-                        next_cnt_t = 4'd0;
-                        if (current_cnt_d == 3'd7) begin
-                            next_cnt_d = 3'd0;
-                            next_state = STOP;
-                        end
-                        else begin
-                            next_cnt_d = current_cnt_d + 3'd1;
-                        end
-                    end
-                    else begin
-                        next_cnt_t = current_cnt_t + 4'd1;
-                    end
-                end
-                else begin
-                end
+                    if ((cnt_t == 4'd15)&&(cnt_d == 3'd7)) begin
+                       next_state = STOP;
+                    end    
+                end                
             end
             
             STOP: begin
-            tx = 1'd1;
-            if (sampling_tick) begin
-                if (current_cnt_t == 4'd15) begin
-                    next_state = IDLE;
-                    next_cnt_t = 4'd0;
+                tx = 1'd1;
+                if (sampling_tick) begin
+                    if (cnt_t == 4'd15) begin
+                        next_state = IDLE;
+                    end
+                    else begin
+                        next_state = STOP;
+                    end
                 end
-                else begin
-                    next_cnt_t = current_cnt_t + 4'd1;
-                end
-            end
             end
             
         endcase
