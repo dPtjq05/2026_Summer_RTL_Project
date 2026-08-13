@@ -334,3 +334,31 @@
 
 * **수십 ns 단위 파형 정밀 모니터링:**
   * VALID-READY 핸드셰이크 시점의 1클럭 펄스 타이밍 엇박자 및 Master FSM 데드락(State 3 `STATE_AXI_WRITE` ➔ State 5 `STATE_RX_RESP` 천이 길목 정체) 원인을 핀셋 감지로 규명하고, RTL 타이밍 및 FSM Latching 수정을 통해 최종 해결 완료.
+
+---
+
+## 📅 [2026-08-13] UART TX Combinational Loop / Pipeline Lag 해결 및 Bridge Write FSM/Slave 디버깅
+
+### 🎯 주요 달성 목표
+- [x] UART TX 모듈 Combinational Loop (`tx_busy`) 원인 규명 및 순차 논리(FF) 변환으로 시뮬레이션 Hang 해결
+- [x] `tx` 직렬 출력선 1-Clock Pipeline Lag 및 STOP 비트 경계 침범 버그 수정 (조합 MUX 적용)
+- [x] UART TX 모듈 단독 파형 검증 (`tx_start` $\rightarrow$ Start $\rightarrow$ Data $\rightarrow$ Stop 비트 규격 송신 확인)
+- [x] Bridge FSM Write 응답 패킷(ACK 1-byte vs Payload 5-byte) 분기 버그 및 AXI Slave `dummy_reg` 쓰기 불능 문제 포착
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+
+* **`tx_busy` 플립플롭 포장 및 Combinational Loop 차단**
+  * Bridge 모듈과 UART TX 모듈 간 상호 피드백 고리를 형성하던 `tx_busy` 조합 논리 신호를 `always @(posedge clk)` 순차 논리 플립플롭으로 전환하여 무한 루프(Combinational Loop) 정지 현상 완벽 상쇄.
+
+* **"FF 제어 + Combinational MUX 출력" 정석 하이브리드 구조 정립**
+  * `tx` 출력을 순차 논리로만 감쌌을 때 발생하는 1클럭 지연(Pipeline Lag)으로 인해 비트 타이밍이 밀리고 STOP 비트 경계가 오염되는 현상 분석.
+  * 내부 상태 및 카운터(`state`, `cnt_d`)는 순차 회로로 안전하게 제어하되, 최종 `tx` 출력선만 조합 논리 MUX(`always @(*)` / `assign`)로 분리하여 0ps (Zero-Latency) 즉각 반응 구조로 최적화.
+
+### 🧪 검증 및 디버깅 요약 (Troubleshooting & Verification)
+
+* **UART TX 모듈 파형 정상 검증:**
+  * `tx_start` 펄스 인가 시 Start Bit(0) ➔ 8-bit Data ➔ Stop Bit(1)가 설정된 보레이트 주기에 맞춰 무결하게 발사됨을 확인.
+
+* **Bridge FSM Write 루틴 & Slave `dummy_reg` 버그 포착:**
+  * **Bridge FSM 분기 오류:** Write 트랜잭션 성공 시 PC로 1바이트 ACK(성공 알림)만 전송해야 하나, Read 루프처럼 5바이트 페이로드를 연속 발사하는 FSM 상태 분기 결함 발견.
+  * **Slave `dummy_reg` 쓰기 불능:** Write 트랜잭션 수행 중 AXI Slave 내 레지스터 기입 미동작 포착 ➔ AXI Write 핸드셰이크(`WVALID & WREADY`), 주소 디코딩 및 `WSTRB` 타이밍 정밀 점검 진행 예정.
