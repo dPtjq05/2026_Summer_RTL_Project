@@ -132,3 +132,9 @@
 * **원인 분석**: Bridge FSM 내 Write 완료 루틴 분기 조건 오작동 및 AXI Slave 쓰기 채널(`WVALID & WREADY`), `WSTRB` 인가 시점 불일치 추정.
 * **해결 아키텍처**: (진행 중) Bridge FSM 응답 루틴 분기 조건 수정 및 AXI Write 핸드셰이크, 주소 디코딩, `WSTRB` 타이밍 정밀 디버깅 진행 중.
 * **💡 하드웨어적 깨달음**: AXI Master-Slave 프로토콜 통신 시 Write ACK와 Read Payload 간의 FSM 상태 분기를 엄격히 제어하지 않으면 통신 프로토콜 꼬임 현상이 발생함.
+
+### 🚨 [Issue 18] `uart_rx` 모듈 Multi-driven Net 에러 및 Stop Bit 수신 시 FSM 데드락
+* **문제 현상:** 합성 시 `rx_done` 신호에 대해 Multi-driven Net 에러가 발생하고, 노이즈로 인해 비정상 Stop Bit가 유입될 경우 RX FSM이 `IDLE`로 돌아오지 못하고 정지함.
+* **원인 분석:** `rx_done` 신호가 조합 블록과 순차 블록 양쪽에서 중복 드라이브되었으며, Stop Bit 검사 조건에서 `rx == 1`을 만족하지 못하면 상태 탈출 조건이 누락되어 데드락 발생.
+* **해결 아키텍처:** `rx_done`을 `always @(posedge clk)` 단일 블록에서 1클럭 펄스로 래칭하도록 단일화하고, Stop Bit 카운트 완료 시 `rx` 전압 레벨과 무관하게 무조건 `IDLE`로 복귀하도록 타임아웃 예외 처리 적용. 외부 `rx` 핀에는 2-Stage Synchronizer를 배치하여 글리치 방어.
+* **💡 하드웨어적 깨달음:** 상태 머신의 예외 경로는 반드시 Default 복귀 조건을 마련해야 하며, 동일한 제어 신호가 서로 다른 `always` 블록에서 중복 드라이브되지 않도록 순차 레지스터로 일원화해야 함.
