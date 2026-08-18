@@ -362,3 +362,33 @@
 * **Bridge FSM Write 루틴 & Slave `dummy_reg` 버그 포착:**
   * **Bridge FSM 분기 오류:** Write 트랜잭션 성공 시 PC로 1바이트 ACK(성공 알림)만 전송해야 하나, Read 루프처럼 5바이트 페이로드를 연속 발사하는 FSM 상태 분기 결함 발견.
   * **Slave `dummy_reg` 쓰기 불능:** Write 트랜잭션 수행 중 AXI Slave 내 레지스터 기입 미동작 포착 ➔ AXI Write 핸드셰이크(`WVALID & WREADY`), 주소 디코딩 및 `WSTRB` 타이밍 정밀 점검 진행 예정.
+
+---
+
+## 📅 [2026-08-18] uart_rx RTL 4대 결함 디버깅, AXI Write 골든 파형 정의 및 시스템 통합 문서화
+
+### 🎯 주요 달성 목표
+- [x] `uart_rx` 모듈 코드 리뷰 및 4대 핵심 결함(Multi-driven Net, 데이터 미출력, Stop bit 데드락, CDC) 전면 수정
+- [x] AXI Write 트랜잭션 4단계 정상 동작 기준(Golden Waveform Timeline) 정립
+- [x] 2-Block FSM 기반 Combinational vs Sequential 로직 분리 원칙 확립
+- [x] SoC Integration 관점의 계층 구조 시각화(Datapath/Control 분리, 시간축 핸드셰이크) 체계 수립
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+
+* **`uart_rx` 모듈 4대 결함 정밀 수정**
+  * **Multi-driven Net 에러 제거:** `always @(*)`와 `always @(posedge clk)`에서 중복 할당되던 `rx_done` 신호를 순차 논리(Registered 1-Clock Pulse)로 단일화하여 합성 에러 원천 차단.
+  * **데이터 출력 포트 래칭 (`dout`):** 수신 완료 시점에 내부 시프트 레지스터 `data`를 출력 포트로 넘겨주는 구문(`dout <= data`)을 보완하여 데이터 단절 해결.
+  * **Stop Bit 에러 시 FSM 데드락 방지:** Frame Error(비정상 Stop Bit) 발생 시에도 카운트 완료 후 강제로 `IDLE` 상태로 복귀하도록 예외 처리하여 상태 머신 멈춤 방지.
+  * **2-Stage Synchronizer (Double Flopping):** 비동기 외부 입력 `rx` 신호의 메타스테빌리티(Metastability)를 차단하기 위해 `rx_sync_0`, `rx_sync_1` 2단 플립플롭 동기화기 적용.
+
+* **2-Block FSM 설계 원칙 정립**
+  * **조합 논리 (`always @(*)`):** 0-Latency 디코딩, MUX 선택, `next_state` 천이 판단 등 실시간 분기 연산에만 국한.
+  * **순차 논리 (`always @(posedge clk)`):** 상태 레지스터(`current_state`), 카운터, 1클럭 펄스 스트로브(`rx_done`), 모듈 출력 레지스터 등 상태 보존 및 안정적인 $T_{co}$ 마진 확보에 할당.
+
+### 🧪 검증 및 골든 파형 시퀀스 (Golden Waveform)
+
+* **AXI Write 4단계 정상 동작 타임라인 수립**
+  1. **Phase 1 (UART 수신):** Stop Bit 감지 직후 `rx_done` 1클럭 펄스 발생.
+  2. **Phase 2 (Bridge FSM 천이):** `IDLE` ➔ `PARSE` ➔ `AXI_WRITE` 상태로 안전하게 전이.
+  3. **Phase 3 (AXI 버스 핸드셰이크):** `AWVALID & AWREADY`, `WVALID & WREADY` 동시/순차 체결 ➔ `dummy_reg` 값 갱신 ➔ `BVALID / BREADY` 응답 완료.
+  4. **Phase 4 (ACK 반환 및 복귀):** Bridge `RESP` 상태 진입 ➔ `tx_start` 1클럭 펄스 트리거 ➔ UART TX를 통해 `ACK(8'h01)` 송출 후 `IDLE` 복귀.
