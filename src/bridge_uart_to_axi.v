@@ -164,6 +164,7 @@ module bridge_uart_to_axi(
                 end
                 
                 AXI_WRITE: begin    //state =3;
+                //axi_lite_slave와 통신하는 상태- data, addr을 전송
                     m_axi_awaddr <= addr_reg;
                     m_axi_wdata <= data_reg;
                     if (!aw_done) begin
@@ -193,13 +194,19 @@ module bridge_uart_to_axi(
                     
                 end
                 
-                TX_RESP: begin
-                    if (flag_resp) begin    
-                        if (cnt_resp == 2'd3) begin
-                            cnt_resp <= 2'd0;
+                TX_RESP: begin  //state =5;
+                    if (flag_resp) begin
+                        if (cmd_reg == CMD_READ) begin  
+                            if (cnt_resp == 2'd3) begin
+                                cnt_resp <= 2'd0;
+                            end
+                            else begin
+                                cnt_resp <= cnt_resp + 2'd1;
+                            end
                         end
-                        else begin
-                            cnt_resp <= cnt_resp + 2'd1;
+                        else if (cmd_reg == CMD_WRITE) begin
+                            
+                        
                         end
                     end
                 end
@@ -280,18 +287,25 @@ module bridge_uart_to_axi(
             
             TX_RESP: begin  //state 5;
                 if (!tx_busy) tx_start = 1'd1;
-                case (cnt_resp)
-                    2'd0: tx_data = data_reg[31:24];
-                    2'd1: tx_data = data_reg[23:16];
-                    2'd2: tx_data = data_reg[15:8];
-                    2'd3: tx_data = data_reg[7:0];
-                endcase 
-                
-                if ((cnt_resp == 2'd3)&&(flag_resp)) next_state = IDLE;
-                else begin
-                    next_state = TX_RESP;
+                if (cmd_reg == CMD_READ) begin
+                    case (cnt_resp)
+                        2'd0: tx_data = data_reg[31:24];
+                        2'd1: tx_data = data_reg[23:16];
+                        2'd2: tx_data = data_reg[15:8];
+                        2'd3: tx_data = data_reg[7:0];
+                    endcase 
+                    
+                    if ((cnt_resp == 2'd3)&&(flag_resp)) next_state = IDLE;
+                    else begin
+                        next_state = TX_RESP;
+                    end
                 end
-                
+                else begin
+                    if (cmd_reg == CMD_WRITE) begin
+                        if (flag_resp) next_state = IDLE;
+                        else next_state = TX_RESP;
+                    end
+                end
             end
             
         endcase

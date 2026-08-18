@@ -44,30 +44,85 @@ module uart_rx(
     reg [1:0] next_state;
     
     //ready, start, running, end? -----아니 그럴거면 start를 굳이 해야하나?
-    reg [3:0] current_cnt_t;  //tick이 튄 횟수를 셀 카운터-16까지 수를 세야함 -> need 4bit
-    reg [3:0] next_cnt_t;
-    reg [2:0] current_cnt_d;  //data를 셀 카운터-8bit data의 수를 세야함-> need 3bit
-    reg [2:0] next_cnt_d;
+    reg [3:0] cnt_t;  //tick이 튄 횟수를 셀 카운터-16까지 수를 세야함 -> need 4bit
+
+    reg [2:0] cnt_d;  //data를 셀 카운터-8bit data의 수를 세야함-> need 3bit
+
     
     // 전송된 값을 저장해둘 변수들
-    reg [7:0] current_data;
-    reg [7:0] next_data;
+    reg [7:0] data;
     
     always@ (posedge clk) begin
         if (!rst_n) begin
             
             dout<= 8'd0;
-            current_cnt_t <= 4'd0;
-            current_cnt_d <= 3'd0;
+            cnt_t <= 4'd0;
+            cnt_d <= 3'd0;
             current_state <= IDLE;
-            dout <= 7'd0;
         end
         else begin
             current_state <= next_state;
-            current_cnt_d <= next_cnt_d;
-            current_cnt_t <= next_cnt_t;
-            current_data <= next_data;
-            dout <= current_data;
+            case (current_state)
+            
+                IDLE: begin
+                    cnt_d <= 3'd0;
+                    cnt_t <= 4'd0;
+                    data <= 8'd0;
+                    rx_done <= 1'd0;
+                end
+                
+                START: begin
+                    if (sampling_tick) begin
+                        if (cnt_t == 4'd7) begin
+                            cnt_t <= 4'd0;
+                        end
+                        else begin
+                            cnt_t <= cnt_t + 4'd1;
+                        end
+                    end
+                end
+                
+                DATA: begin
+                    if (sampling_tick) begin        //tick이 튄 경우
+                       if (cnt_t == 4'd15) begin    //tick이 15번 튀어서 신호의 중간에 간 경우
+                           data <= {rx,data[7:1]}; //data 집어넣고 
+                           cnt_t <= 0;
+                           if (cnt_d == 3'd7) begin     // 신호중간이라서 data 받으려고 하는데 다 찬 경우
+                               cnt_d <= 3'd0;
+                              
+                           end
+                           else begin
+                               cnt_d <= cnt_d + 3'd1;   //data의 숫자를 하나 더함
+                           end
+                       end
+                       else begin       //tick이 튀긴 했는데 아직 15번이 안 찼을 경우 - 이때는 기존 값들을 그냥 보존
+                           cnt_t <= cnt_t + 4'd1;
+                       end 
+                       
+                    end
+                    else begin
+                       
+                    end
+                end
+                
+                STOP: begin
+                    
+                    if (sampling_tick) begin
+                        
+                        if (cnt_t == 4'd15) begin
+                            if (rx == 1'd1) begin
+                                rx_done <= 1'd1;
+                                dout <= data;
+                            end
+                            cnt_t <= 4'd0;
+                        end
+                        else begin
+                            cnt_t <= cnt_t + 4'd1;  //cnt_T가 아직 가득차지 않았으면 그냥 1을 더한다.
+                        end
+                    
+                    end
+                end
+            endcase
         end
     
     end
@@ -75,14 +130,11 @@ module uart_rx(
     
     always@(*) begin
         next_state = current_state;
-        next_cnt_t = current_cnt_t;
-        next_cnt_d = current_cnt_d;
-        next_data = current_data;
-        rx_done = 1'd0;
-    
+       
         case (current_state)
             IDLE: begin //1이 계속 유지된다면 대기 상태, 0으로 떨어지는 순간이 start bit가 맞는지 판단 시작
-                rx_done = 1'd0;
+               
+                
                 if (rx) begin 
                     next_state = IDLE;
                 end
@@ -95,19 +147,16 @@ module uart_rx(
                 
                 if (sampling_tick) begin
                     
-                    if (current_cnt_t == 4'd7) begin
+                    if (cnt_t == 4'd7) begin
                         
                         if(!rx) begin
-                            next_cnt_t = 4'd0;
                             next_state = DATA;
                         end
                         else begin
-                            next_cnt_t = 4'd0;
                             next_state = IDLE;
                         end
                     end
                     else begin
-                        next_cnt_t = current_cnt_t + 4'd1;
                         next_state = START;
                     end
                 end
@@ -131,22 +180,18 @@ module uart_rx(
 //                   next_state = START;
 //                end
             DATA: begin // start state에서 판단이 섰으면 바로 데이터 읽으러 간다
-                rx_done = 1'd0;
+                
                 if (sampling_tick) begin        //tick이 튄 경우
-                   if (current_cnt_t == 4'd15) begin    //tick이 15번 튀어서 신호의 중간에 간 경우
-                       next_data = {rx, current_data[7:1]}; //data 집어넣고 
-                       next_cnt_t = 0;
-                       if (current_cnt_d == 3'd7) begin     // 신호중간이라서 data 받으려고 하는데 다 찬 경우
+                   if (cnt_t == 4'd15) begin    //tick이 15번 튀어서 신호의 중간에 간 경우
+                       if (cnt_d == 3'd7) begin     // 신호중간이라서 data 받으려고 하는데 다 찬 경우
                            next_state = STOP;
-                           next_cnt_d = 3'd0;
                        end
                        else begin
-                           next_cnt_d = current_cnt_d + 3'd1;   //data의 숫자를 하나 더함
                            next_state = DATA;
                        end
                    end
                    else begin       //tick이 튀긴 했는데 아직 15번이 안 찼을 경우 - 이때는 기존 값들을 그냥 보존
-                       next_cnt_t = current_cnt_t + 4'd1;
+                       
                    end 
                    
                 end
@@ -158,21 +203,14 @@ module uart_rx(
                 
             STOP: begin     //15개의 tick을 세고 15가 되었을 때 stop이 맞는지 확인
             // +) 스탑 비트가 정상일 때 최종 출력 선에 데이터 할당
-                rx_done = 1'd0;
+                
                 if (sampling_tick) begin
-                    rx_done = 1'd0;
-                    if (current_cnt_t == 4'd15) begin
-                        next_cnt_t = 4'd0;
-                        rx_done = 1'd0;
-                        if (rx == 1'd1) begin
-                            rx_done = 1'd1;
-                            next_state = IDLE;
-                        end
-                        
+                    if (cnt_t == 4'd15) begin
+                        next_state = IDLE;
                     end
                     else begin
-                        rx_done = 1'd0;
-                        next_cnt_t = current_cnt_t + 4'd1;  //cnt_T가 아직 가득차지 않았으면 그냥 1을 더한다.
+                        
+                        
                     end
                 
                 end
