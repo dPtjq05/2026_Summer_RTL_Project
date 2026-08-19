@@ -392,3 +392,34 @@
   2. **Phase 2 (Bridge FSM 천이):** `IDLE` ➔ `PARSE` ➔ `AXI_WRITE` 상태로 안전하게 전이.
   3. **Phase 3 (AXI 버스 핸드셰이크):** `AWVALID & AWREADY`, `WVALID & WREADY` 동시/순차 체결 ➔ `dummy_reg` 값 갱신 ➔ `BVALID / BREADY` 응답 완료.
   4. **Phase 4 (ACK 반환 및 복귀):** Bridge `RESP` 상태 진입 ➔ `tx_start` 1클럭 펄스 트리거 ➔ UART TX를 통해 `ACK(8'h01)` 송출 후 `IDLE` 복귀.
+
+---
+
+## 📅 [2026-08-19] uart_rx CDC 안정화, AXI Master/Slave 0-Skew 타이밍 정렬 및 AXI Write 골든 파형 최종 검증
+
+### 🎯 주요 달성 목표
+- [x] `uart_rx` CDC 동기화 경로 보완 (`rx_sync1` 시프트 인입 및 리셋 시 UART Idle 전압 `1'b1` 초기화)
+- [x] Master (`axi_bridge`) AXI Write 채널 0-Skew 조합 논리 출력 정비 (`AWADDR`, `WDATA`, `VALID` 동시 구동)
+- [x] Slave (`axi_slave`) 2단계 원자적 커밋(Buffer Capture ➔ RESP Commit) 아키텍처 확립
+- [x] FSM State 0 ↔ 3 발진(Oscillation) 버그 해결 및 `dummy0` 레지스터 쓰기 골든 파형 확보
+
+### 🛠️ RTL 구현 및 하드웨어 아키텍처
+
+* **`uart_rx` CDC 안정화 및 Active-High Idle 리셋 보완**
+  * 시프트 레지스터(`data`)의 입력선을 원시 핀(`rx`) 대신 2단 플립플롭 동기화 출력(`rx_sync1`)으로 완전 치환하여 비동기 메타스테빌리티 경로 원천 차단.
+  * UART Line의 Idle 상태가 High(`1`)인 규격에 맞춰, 리셋(`!rst_n`) 시 동기화 레지스터(`rx_sync0`, `rx_sync1`)의 리셋 초기값을 `1'b1`로 명시적 보완.
+
+* **Master (`axi_bridge`) 0-Skew 버스 출력 정비**
+  * FSM 상태 진입과 버스 신호 간 1클럭 지연(Skew)을 제거하기 위해, `AXI_WRITE` 상태에서 주소(`AWADDR`), 데이터(`WDATA`), 유효 신호(`AWVALID`, `WVALID`)가 동일 클럭 에지에 실리도록 출력 로직 최적화.
+
+* **Slave (`axi_slave`) 파이프라인 버퍼링 및 원자적(Atomic) 커밋 구조 확립**
+  * `AWVALID & AWREADY`, `WVALID & WREADY` 핸드셰이크 시점에 각각 `buf_awaddr`, `buf_wdata`로 안전하게 래칭.
+  * 인위적인 `done` 플래그 조작을 제거하고, `RESP` 상태에서 일괄적으로 `dummy0` 레지스터를 갱신(Commit)하는 원자적 쓰기 파이프라인 완성.
+
+### 🧪 검증 및 골든 파형 확정 (Golden Waveform Verification)
+
+* **FSM State 0 ↔ 3 발진(Oscillation) 해결:**
+  * Master의 `VALID` 신호 잔류 및 핸드셰이크 De-assertion 타이밍 불일치로 발생하던 무한 토글 루프를 완벽 차단.
+* **골든 파형(Golden Waveform) 최종 동작 확인:**
+  * AXI Write 수행 후 `dummy0` 레지스터에 목표 데이터(`32'h0110_0110`)가 유실 없이 기입됨을 확인.
+  * `bvalid`와 `bready`가 정확히 1클럭 동안 단일 펄스로 맞물려 `bresp = 2'b00` (OKAY)를 전달하고, 양측 FSM이 에러 없이 `IDLE` 상태로 안전 복귀함을 최종 입증.
