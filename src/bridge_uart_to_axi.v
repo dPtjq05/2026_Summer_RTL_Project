@@ -79,6 +79,7 @@ module bridge_uart_to_axi(
     reg [7:0] cmd_reg;
     reg [31:0] data_reg;
     
+    
     reg [1:0] cnt_addr;
     reg [31:0] addr_reg;
     
@@ -117,6 +118,7 @@ module bridge_uart_to_axi(
                             ar_done <= 1'd0;
                             cnt_data <= 2'd0;
                             data_reg <= 32'd0;
+                            
                         end
                         else begin
                             cnt_addr <= cnt_addr + 2'd1;
@@ -130,8 +132,8 @@ module bridge_uart_to_axi(
                         data_reg <= {data_reg[23:0],rx_data};
                         if (cnt_data== 2'd3) begin
                             cnt_data <= 2'd0;
-                            aw_done <= 1'd0;    //다음 state를 위해 미리 초기화.
                             w_done <= 1'd0;
+                            aw_done <= 1'd0;
                         end
                         else begin
                             
@@ -165,8 +167,7 @@ module bridge_uart_to_axi(
                 
                 AXI_WRITE: begin    //state =3;
                 //axi_lite_slave와 통신하는 상태- data, addr을 전송
-                    m_axi_awaddr <= addr_reg;
-                    m_axi_wdata <= data_reg;
+                    
                     if (!aw_done) begin
                         if (m_axi_awvalid && m_axi_awready) begin
                             aw_done <= 1'd1;
@@ -274,6 +275,9 @@ module bridge_uart_to_axi(
             end
             
             AXI_WRITE: begin    //state =3
+                m_axi_awaddr = addr_reg;
+                m_axi_wdata = data_reg;
+                    
                 m_axi_awvalid = (!aw_done);
                 m_axi_wvalid = (!w_done);
                 m_axi_bready = (w_done && aw_done);

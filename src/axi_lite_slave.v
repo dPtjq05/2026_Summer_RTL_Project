@@ -72,7 +72,6 @@ output reg [1:0] s_rresp
     
     reg [31:0] buf_wdata;   //내부에 저장해둘 buffer.
     reg [31:0] buf_awaddr;
-    
     reg [3:0] buf_wstrb; //wstrb를 저장해둘 buffer 추가.
     
     reg [31:0] buf_araddr;
@@ -117,33 +116,9 @@ output reg [1:0] s_rresp
                 WIDLE: begin    //동시에 handshake가 발생하는 선행 조건을 추가해서 데이터를 버퍼에 저장하지 않고 바로 들어가도록 설계.
                     
                     if (s_wvalid && s_wready && s_awvalid && s_awready) begin
-                        case (s_awaddr[3:2])
-                            2'b00: begin
-                                if (s_wstrb[0]) dummy0[7:0] <= s_wdata[7:0];
-                                if (s_wstrb[1]) dummy0[15:8] <= s_wdata[15:8];
-                                if (s_wstrb[2]) dummy0[23:16] <= s_wdata[23:16];
-                                if (s_wstrb[3]) dummy0[31:24] <= s_wdata[31:24];
-                            end
-                            2'b01: begin
-                                if (s_wstrb[0]) dummy1[7:0] <= s_wdata[7:0];
-                                if (s_wstrb[1]) dummy1[15:8] <= s_wdata[15:8];
-                                if (s_wstrb[2]) dummy1[23:16] <= s_wdata[23:16];
-                                if (s_wstrb[3]) dummy1[31:24] <= s_wdata[31:24];
-                            end
-                            
-                            2'b10: begin
-                                if (s_wstrb[0]) dummy2[7:0] <= s_wdata[7:0];
-                                if (s_wstrb[1]) dummy2[15:8] <= s_wdata[15:8];
-                                if (s_wstrb[2]) dummy2[23:16] <= s_wdata[23:16];
-                                if (s_wstrb[3]) dummy2[31:24] <= s_wdata[31:24];
-                            end
-                            2'b11:begin
-                                if (s_wstrb[0]) dummy3[7:0] <= s_wdata[7:0];
-                                if (s_wstrb[1]) dummy3[15:8] <= s_wdata[15:8];
-                                if (s_wstrb[2]) dummy3[23:16] <= s_wdata[23:16];
-                                if (s_wstrb[3]) dummy3[31:24] <= s_wdata[31:24];
-                            end
-                        endcase
+                        buf_wdata <= s_wdata;
+                        buf_wstrb <= s_wstrb;
+                        buf_awaddr <= s_awaddr;
                     end
                     else
                         if (s_wvalid && s_wready) begin
@@ -158,76 +133,48 @@ output reg [1:0] s_rresp
                 
                 DWAIT: begin    //address는 확보함, data를 기다리는 상태.--주소를 미리 저장해두고 있음.
                     if (s_wvalid && s_wready) begin
-                        case (buf_awaddr[3:2])
-                            2'b00: begin
-                                if (s_wstrb[0]) dummy0[7:0] <= s_wdata[7:0];
-                                if (s_wstrb[1]) dummy0[15:8] <= s_wdata[15:8];
-                                if (s_wstrb[2]) dummy0[23:16] <= s_wdata[23:16];
-                                if (s_wstrb[3]) dummy0[31:24] <= s_wdata[31:24];
-                            end
-                            2'b01: begin
-                                if (s_wstrb[0]) dummy1[7:0] <= s_wdata[7:0];
-                                if (s_wstrb[1]) dummy1[15:8] <= s_wdata[15:8];
-                                if (s_wstrb[2]) dummy1[23:16] <= s_wdata[23:16];
-                                if (s_wstrb[3]) dummy1[31:24] <= s_wdata[31:24];
-                            end
-                            
-                            2'b10: begin
-                                if (s_wstrb[0]) dummy2[7:0] <= s_wdata[7:0];
-                                if (s_wstrb[1]) dummy2[15:8] <= s_wdata[15:8];
-                                if (s_wstrb[2]) dummy2[23:16] <= s_wdata[23:16];
-                                if (s_wstrb[3]) dummy2[31:24] <= s_wdata[31:24];
-                            end
-                            2'b11:begin
-                                if (s_wstrb[0]) dummy3[7:0] <= s_wdata[7:0];
-                                if (s_wstrb[1]) dummy3[15:8] <= s_wdata[15:8];
-                                if (s_wstrb[2]) dummy3[23:16] <= s_wdata[23:16];
-                                if (s_wstrb[3]) dummy3[31:24] <= s_wdata[31:24];
-                            end
-                        endcase
+                        buf_wdata <= s_wdata;
+                        buf_wstrb <= s_wstrb;
                     end
                 end
                 
                 AWAIT: begin        //주소를 기다린다. 그러니까 데이터는 버퍼에 있다. 주소가 들어오는 타이밍에 버퍼가 아닌 주소 wire에서 가져와야 한다.
                     if (s_awvalid && s_awready) begin
-                        case (s_awaddr[3:2])
-                            2'b00: begin
-                                if (buf_wstrb[0]) dummy0[7:0] <= buf_wdata[7:0];
-                                if (buf_wstrb[1]) dummy0[15:8] <= buf_wdata[15:8];
-                                if (buf_wstrb[2]) dummy0[23:16] <= buf_wdata[23:16];
-                                if (buf_wstrb[3]) dummy0[31:24] <= buf_wdata[31:24];
-                            end
-                            
-                            2'b01: begin
-                                if (buf_wstrb[0]) dummy1[7:0] <= buf_wdata[7:0];
-                                if (buf_wstrb[1]) dummy1[15:8] <= buf_wdata[15:8];
-                                if (buf_wstrb[2]) dummy1[23:16] <= buf_wdata[23:16];
-                                if (buf_wstrb[3]) dummy1[31:24] <= buf_wdata[31:24];
-                            end
-                            
-                            2'b10: begin
-                                if (buf_wstrb[0]) dummy2[7:0] <= buf_wdata[7:0];
-                                if (buf_wstrb[1]) dummy2[15:8] <= buf_wdata[15:8];
-                                if (buf_wstrb[2]) dummy2[23:16] <= buf_wdata[23:16];
-                                if (buf_wstrb[3]) dummy2[31:24] <= buf_wdata[31:24];
-                            end
-                            
-                            2'b11: begin
-                                if (buf_wstrb[0]) dummy3[7:0] <= buf_wdata[7:0];
-                                if (buf_wstrb[1]) dummy3[15:8] <= buf_wdata[15:8];
-                                if (buf_wstrb[2]) dummy3[23:16] <= buf_wdata[23:16];
-                                if (buf_wstrb[3]) dummy3[31:24] <= buf_wdata[31:24];
-                            end
-                        endcase
+                        buf_awaddr <= s_awaddr;
                     end
                 
                 end
                 WRESP: begin    //fix: delta cycle error를 방지 하기 위해서 bvalid, bresp 신호를 sequential logic으로 바꿈.
                        //bresp 신호가 bvalid가 1로 튈 때 정상 작동하도록 고쳐줌.
+                    case (buf_awaddr[3:2])
+                        2'b00: begin
+                            if (buf_wstrb[0]) dummy0[7:0] <= buf_wdata[7:0];
+                            if (buf_wstrb[1]) dummy0[15:8] <= buf_wdata[15:8];
+                            if (buf_wstrb[2]) dummy0[23:16] <= buf_wdata[23:16];
+                            if (buf_wstrb[3]) dummy0[31:24] <= buf_wdata[31:24];
+                        end
+                        2'b01: begin
+                            if (buf_wstrb[0]) dummy1[7:0] <= buf_wdata[7:0];
+                            if (buf_wstrb[1]) dummy1[15:8] <= buf_wdata[15:8];
+                            if (buf_wstrb[2]) dummy1[23:16] <= buf_wdata[23:16];
+                            if (buf_wstrb[3]) dummy1[31:24] <= buf_wdata[31:24];
+                        end            
+                        2'b10: begin
+                            if (buf_wstrb[0]) dummy2[7:0] <= buf_wdata[7:0];
+                            if (buf_wstrb[1]) dummy2[15:8] <= buf_wdata[15:8];
+                            if (buf_wstrb[2]) dummy2[23:16] <= buf_wdata[23:16];
+                            if (buf_wstrb[3]) dummy2[31:24] <= buf_wdata[31:24];
+                        end
+                        2'b11:begin
+                            if (buf_wstrb[0]) dummy3[7:0] <= buf_wdata[7:0];
+                            if (buf_wstrb[1]) dummy3[15:8] <= buf_wdata[15:8];
+                            if (buf_wstrb[2]) dummy3[23:16] <= buf_wdata[23:16];
+                            if (buf_wstrb[3]) dummy3[31:24] <= buf_wdata[31:24];
+                        end
+                    endcase
                     if (s_bready && s_bvalid) begin
                         s_bvalid <= 1'd0;
                         s_bresp <= 2'b00;
-    
                     end
                     else begin
                         s_bvalid <= 1'd1;
@@ -314,6 +261,34 @@ output reg [1:0] s_rresp
             WRESP: begin
                 s_wready = 1'd0;    //fix: resp 과정 중에는 ready를 꺼야 함. 1로 계속 두면 잘못된 handshake가 발생할 수도 있음.
                 s_awready = 1'd0;
+                case (s_awaddr[3:2])
+                        2'b00: begin
+                            if (s_wstrb[0]) dummy0[7:0] <= s_wdata[7:0];
+                            if (s_wstrb[1]) dummy0[15:8] <= s_wdata[15:8];
+                            if (s_wstrb[2]) dummy0[23:16] <= s_wdata[23:16];
+                            if (s_wstrb[3]) dummy0[31:24] <= s_wdata[31:24];
+                        end
+                        2'b01: begin
+                            if (s_wstrb[0]) dummy1[7:0] <= s_wdata[7:0];
+                            if (s_wstrb[1]) dummy1[15:8] <= s_wdata[15:8];
+                            if (s_wstrb[2]) dummy1[23:16] <= s_wdata[23:16];
+                            if (s_wstrb[3]) dummy1[31:24] <= s_wdata[31:24];
+                        end
+                          
+                        2'b10: begin
+                            if (s_wstrb[0]) dummy2[7:0] <= s_wdata[7:0];
+                            if (s_wstrb[1]) dummy2[15:8] <= s_wdata[15:8];
+                            if (s_wstrb[2]) dummy2[23:16] <= s_wdata[23:16];
+                            if (s_wstrb[3]) dummy2[31:24] <= s_wdata[31:24];
+                        end
+                        2'b11:begin
+                            if (s_wstrb[0]) dummy3[7:0] <= s_wdata[7:0];
+                            if (s_wstrb[1]) dummy3[15:8] <= s_wdata[15:8];
+                            if (s_wstrb[2]) dummy3[23:16] <= s_wdata[23:16];
+                            if (s_wstrb[3]) dummy3[31:24] <= s_wdata[31:24];
+                        end
+                    endcase
+                
                 if (s_bready) begin //sequential logic으로 짜면 좀 더 안전한 타이밍 설계를 할 수 있지만 처음에 설계할 때 이 resp 상태를 고려하지 않은 구조로 짜서 그냥 combi로 짬.
                     w_next_state = WIDLE;
                     

@@ -40,6 +40,9 @@ module uart_rx(
     localparam STOP = 2'b11;
     // 위 state는 현업 표준을 따랐음.
     
+    reg rx_sync0;
+    reg rx_sync1;
+    //aync 통신이기에 CDC를 고려해서 metastability를 피하기 위해서 2-FF 방식을 사용했음.
     reg [1:0] current_state;
     reg [1:0] next_state;
     
@@ -54,13 +57,17 @@ module uart_rx(
     
     always@ (posedge clk) begin
         if (!rst_n) begin
-            
+            rx_sync0 <= 1'd0;
+            rx_sync1 <= 1'd0;
             dout<= 8'd0;
             cnt_t <= 4'd0;
             cnt_d <= 3'd0;
             current_state <= IDLE;
         end
         else begin
+        
+            rx_sync0 <= rx;
+            rx_sync1 <= rx_sync0;
             current_state <= next_state;
             case (current_state)
             
@@ -85,7 +92,7 @@ module uart_rx(
                 DATA: begin
                     if (sampling_tick) begin        //tick이 튄 경우
                        if (cnt_t == 4'd15) begin    //tick이 15번 튀어서 신호의 중간에 간 경우
-                           data <= {rx,data[7:1]}; //data 집어넣고 
+                           data <= {rx_sync1,data[7:1]}; //data 집어넣고 
                            cnt_t <= 0;
                            if (cnt_d == 3'd7) begin     // 신호중간이라서 data 받으려고 하는데 다 찬 경우
                                cnt_d <= 3'd0;
@@ -110,7 +117,7 @@ module uart_rx(
                     if (sampling_tick) begin
                         
                         if (cnt_t == 4'd15) begin
-                            if (rx == 1'd1) begin
+                            if (rx_sync1 == 1'd1) begin
                                 rx_done <= 1'd1;
                                 dout <= data;
                             end
@@ -135,7 +142,7 @@ module uart_rx(
             IDLE: begin //1이 계속 유지된다면 대기 상태, 0으로 떨어지는 순간이 start bit가 맞는지 판단 시작
                
                 
-                if (rx) begin 
+                if (rx_sync1) begin 
                     next_state = IDLE;
                 end
                 else begin
@@ -149,7 +156,7 @@ module uart_rx(
                     
                     if (cnt_t == 4'd7) begin
                         
-                        if(!rx) begin
+                        if(!rx_sync1) begin
                             next_state = DATA;
                         end
                         else begin
