@@ -138,3 +138,10 @@
 * **원인 분석:** `rx_done` 신호가 조합 블록과 순차 블록 양쪽에서 중복 드라이브되었으며, Stop Bit 검사 조건에서 `rx == 1`을 만족하지 못하면 상태 탈출 조건이 누락되어 데드락 발생.
 * **해결 아키텍처:** `rx_done`을 `always @(posedge clk)` 단일 블록에서 1클럭 펄스로 래칭하도록 단일화하고, Stop Bit 카운트 완료 시 `rx` 전압 레벨과 무관하게 무조건 `IDLE`로 복귀하도록 타임아웃 예외 처리 적용. 외부 `rx` 핀에는 2-Stage Synchronizer를 배치하여 글리치 방어.
 * **💡 하드웨어적 깨달음:** 상태 머신의 예외 경로는 반드시 Default 복귀 조건을 마련해야 하며, 동일한 제어 신호가 서로 다른 `always` 블록에서 중복 드라이브되지 않도록 순차 레지스터로 일원화해야 함.
+
+### 🚨 [Issue 19] Master-Slave 간 1-Clock Skew로 인한 FSM State 0 ↔ 3 발진 및 레지스터 커밋 실패
+* **문제 현상:** AXI Write 트랜잭션 도중 Master FSM이 0과 3 사이를 무한 반복(Oscillation)하며, Slave 내부 `dummy0` 레지스터에 데이터가 정상 기입되지 않음.
+* **관련 이미지 주소**:<img width="744" height="582" alt="image" src="https://github.com/user-attachments/assets/6f5b9be8-7c8f-4cdb-a1a0-b7720fc894e1" />
+* **원인 분석:** Master FSM의 상태 천이와 AXI 버스 신호(`AWADDR`, `WDATA`, `VALID`) 구동 간에 1클럭 지연(Skew)이 발생하여 핸드셰이크 완료 신호를 오인식했고, Slave 측에서는 쓰기 채널 캡처 완료 시점과 레지스터 갱신 시점이 엇갈림.
+* **해결 아키텍처:** Master의 AXI Write 신호들을 FSM 상태 진입과 동시에 즉시 구동(0-Skew)하도록 출력 경로를 정비하고, Slave는 `buf_awaddr`/`buf_wdata` 캡처 후 `RESP` 상태에서 일괄 커밋하는 2단계 원자적(Atomic) 구조로 재설계.
+* **💡 하드웨어적 깨달음:** 버스 프로토콜 설계 시 FSM 제어 신호와 데이터 버스 간 Skew가 발생하면 핸드셰이크 판정이 어긋나 발진이 일어날 수 있으므로, 버스 구동 타이밍의 동시성과 원자적 데이터 커밋 구조가 필수적임.
