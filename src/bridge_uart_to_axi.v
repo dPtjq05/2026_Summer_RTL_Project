@@ -109,6 +109,7 @@ module bridge_uart_to_axi(
                         cnt_addr <= 2'd0;
                         cmd_reg <= rx_data; //내부 reg에 read, write 신호라는 것을 저장.
                     end
+                    
                 end
                 RX_ADDR: begin  //state=1;
                     if (rx_done) begin
@@ -143,7 +144,6 @@ module bridge_uart_to_axi(
                 end
                 
                 AXI_READ: begin     //state =4;
-                    m_axi_araddr <= addr_reg;
                     
                     if (!ar_done) begin
                         if (m_axi_arvalid && m_axi_arready) begin
@@ -255,6 +255,7 @@ module bridge_uart_to_axi(
             end
             
             AXI_READ: begin
+                m_axi_araddr = addr_reg;
                 m_axi_arvalid = !ar_done;
                 m_axi_rready = ar_done;
                 if (!ar_done) begin //ar handshake 이전

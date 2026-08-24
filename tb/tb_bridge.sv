@@ -144,6 +144,9 @@ module tb_bridge(
         
         common_write(8'h57, 32'h0101_0010, 32'h0110_0110);
         //cmd-addr-data
+        #20000;
+        common_read(8'h52, 32'h0101_0010);
+        //cmd-addr
     end
     
     task common_write (
@@ -165,6 +168,19 @@ module tb_bridge(
         
     endtask
     
+    task common_read(
+        input [7:0] cmd_w,
+        input [31:0] addr_w
+        );
+        send_byte(cmd_w);
+        
+        send_byte(addr_w[31:24]);
+        send_byte(addr_w[23:16]);
+        send_byte(addr_w[15:8]);
+        send_byte(addr_w[7:0]);
+    
+    endtask
+    
     task send_byte(
         input [7:0] data
     );
@@ -180,5 +196,6 @@ module tb_bridge(
             #bit_period;
         end
     endtask
+    
     
 endmodule
