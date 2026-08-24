@@ -457,3 +457,30 @@
 * **32-bit ➔ 4-byte UART TX 순차 직렬화 (Serialization)**
   * TX 모듈이 `tx_start` 펄스를 감지한 직후 다음 클럭에서 State 1(START) 전환 및 `tx_busy = 1`을 구동하며 물리 버스(`tx`)에 Start Bit(0) 인가.
   * 32비트 데이터(`0x0110_0110`)가 상위 바이트부터 `0x01` ➔ `0x10` ➔ `0x01` ➔ `0x10` 순으로 분할되어 총 4회의 개별 UART 프레임(Start + 8 Data + Stop)으로 유실 없이 직렬 송신됨을 파형으로 최종 입증.
+
+---
+
+## 📅 [2026-08-24] C Host Driver 패킷 파서 완성 및 BIST (Built-In Self-Test) 자동 검증 엔진 구축
+
+### 🎯 주요 달성 목표
+- [x] Host-FPGA 통신 패킷 직렬화 및 역직렬화 (Serialization / Deserialization) 함수 구현
+- [x] 가상 루프백(Virtual Loopback) 모델 기반 `run_test_vector` 단일 테스트 하네스 모듈화
+- [x] 하드웨어 무결성 자가진단(BIST) 패턴 구축 (Checkerboard, Walking 1s, Random Stress)
+- [x] 자동 PASS / FAIL 판정 및 실시간 통계 리포트 생성 파이프라인 검증
+
+### 💻 Software 계층 (C Driver & Packet Parser)
+
+* **패킷 직렬화 / 역직렬화 API 구축**
+  * `build_write_packet`: 9바이트 패킷 생성 (`Opcode(0x01)` + `4-byte Addr` + `4-byte Write Data`, Big-Endian 분할).
+  * `build_read_packet`: 5바이트 읽기 요청 패킷 생성 (`Opcode(0x02)` + `4-byte Addr`).
+  * `parse_read_response`: UART 수신 4바이트 스트림을 32비트 정수로 재조립(`(b[0]<<24) | (b[1]<<16) | ...`)하여 반환.
+
+### 🧪 BIST 자가진단 파이프라인 및 테스트 벡터 (Hardware Integrity Verification)
+
+* **단일 테스트 하네스 (`run_test_vector`)**
+  * 송신 패킷 빌드 ➔ 하드웨어 트랜잭션 시뮬레이션(가상 루프백 모델) ➔ 수신 패킷 파싱 ➔ 원본 데이터와의 무결성 검증을 1-Call로 수행하는 구조로 추상화.
+
+* **3단계 하드웨어 결함 검출 패턴 적용**
+  1. **Checkerboard (`0x55`, `0xAA`):** 인접 데이터 버스 라인 간의 간섭(Crosstalk) 및 단락(Bridging Fault/Short) 검출.
+  2. **Walking 1s (`Bit 0 ~ 24`):** 버스 라인이 접지(GND)에 고정되는 Stuck-at-0 물리적 결함 검출.
+  3. **Random Stress Test:** 의사 난수(PRNG) 기반 연속 트랜잭션을 인가하여 버스 부하 및 상태 머신의 동적 안정성 검증 (100% PASS 리포트 달성).
