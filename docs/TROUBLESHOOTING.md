@@ -145,3 +145,14 @@
 * **원인 분석:** Master FSM의 상태 천이와 AXI 버스 신호(`AWADDR`, `WDATA`, `VALID`) 구동 간에 1클럭 지연(Skew)이 발생하여 핸드셰이크 완료 신호를 오인식했고, Slave 측에서는 쓰기 채널 캡처 완료 시점과 레지스터 갱신 시점이 엇갈림.
 * **해결 아키텍처:** Master의 AXI Write 신호들을 FSM 상태 진입과 동시에 즉시 구동(0-Skew)하도록 출력 경로를 정비하고, Slave는 `buf_awaddr`/`buf_wdata` 캡처 후 `RESP` 상태에서 일괄 커밋하는 2단계 원자적(Atomic) 구조로 재설계.
 * **💡 하드웨어적 깨달음:** 버스 프로토콜 설계 시 FSM 제어 신호와 데이터 버스 간 Skew가 발생하면 핸드셰이크 판정이 어긋나 발진이 일어날 수 있으므로, 버스 구동 타이밍의 동시성과 원자적 데이터 커밋 구조가 필수적임.
+
+### 📅 [Log #20] AXI Read AR 채널 Zero-Wait 핸드셰이크 및 32-bit UART TX 직렬화 검증
+
+* **관련 이미지 주소**: <img width="940" height="480" alt="image" src="https://github.com/user-attachments/assets/9aafed29-f4e4-4e96-9c50-7b7db7be90b8" />
+<img width="940" height="305" alt="image" src="https://github.com/user-attachments/assets/294b58b9-94a3-4a2d-9aa4-5d13fa45a3fd" />
+
+* **현상 및 분석**:
+  1. Bridge FSM이 `AXI_READ`(State 4)에 진입하는 순간 `s_arvalid`와 `s_araddr`가 0-Skew로 인가되어 Slave의 `s_arready`와 1클럭 만에 핸드셰이크 체결.
+  2. Slave에서 반환된 `32'h0110_0110` 데이터를 Bridge가 수신 후, State 5에서 `tx_start` 1-Clock Pulse를 Assert.
+  3. UART TX 모듈이 `tx_start`를 수신하여 `tx_busy`를 올리고 32비트 데이터를 4개의 8비트 프레임(`0x01` ➔ `0x10` ➔ `0x01` ➔ `0x10`)으로 분할하여 Big-Endian 순서로 직렬 송신하는 전 과정 추적.
+* **검증 결과**: AR 채널 핸드셰이크 직후 신호 자동 De-assertion 및 4바이트 연속 UART 직렬화 데이터패스 상의 비트 깨짐/유실이 전혀 없음을 최종 증명.
