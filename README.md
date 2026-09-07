@@ -2,7 +2,6 @@
 
 FPGA (Artix-7 / Cmod A7) 환경에서 12MHz 시스템 클럭을 기반으로 동작하는 고신뢰성 UART IP, AXI4-Lite 레지스터 맵 제어기 RTL 설계 및 C 언어 기반 자가진단(BIST) 엔진 통합 프로젝트입니다.
 
-(본 README 파일은 직접 설계한 코드와 자료를 바탕으로 AI의 도움을 받아 작성하였습니다. 내용은 모두 직접 구성했으며 md 파일의 문법만 참고했음을 알려드립니다.)
 ---
 
 ## 📌 Project Overview
@@ -12,7 +11,7 @@ FPGA (Artix-7 / Cmod A7) 환경에서 12MHz 시스템 클럭을 기반으로 동
 * **Target Board:** Xilinx Cmod A7-35T (Artix-7 `XC7A35T-1CPG236C`)
 * **System Clock:** 12 MHz ($T = 83.33\text{ns}$)
 * **Design & Verification:** Verilog HDL, SystemVerilog (Task-based BFM)
-* **Software Stack:** C (C99), Custom HAL (`axi_regs.h`), BIST Test Harness
+* **Software Stack:** C (C++), Custom HAL (`axi_regs.h`), BIST Test Harness
 * **EDA Tool:** AMD Xilinx Vivado ML Edition
 * **Core Protocols:** UART (9600 bps, 16x Oversampling) $\longleftrightarrow$ AXI4-Lite Slave Protocol
 
