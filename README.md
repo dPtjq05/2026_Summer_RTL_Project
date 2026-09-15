@@ -48,6 +48,8 @@ FPGA (Artix-7 / Cmod A7) 환경에서 12MHz 시스템 클럭을 기반으로 동
 
 ### 🔍 RTL Schematic (Vivado Elaborated Design)
 본 프로젝트의 Top-level 모듈 물리적 결선도입니다. UART 통신부, 프로토콜 변환 브릿지, AXI4-Lite 슬레이브 레지스터 뱅크 간의 내부 버스 라우팅을 명확히 확인할 수 있습니다.
+
+
 <img width="499" height="344" alt="image" src="https://github.com/user-attachments/assets/115439c4-55ec-4ec2-a899-2689578c7a2e" />
 
 ---
@@ -128,8 +130,7 @@ XDC 제약 파일을 통한 시스템 클럭 12MHz 인가 후, Setup/Hold 타임
 
 | 칩 전체 조감도 (Full View) | 물리 배선 확대도 (Routing View) |
 | :---: | :---: |
-| ![Full View] <img width="486" height="353" alt="image" src="https://github.com/user-attachments/assets/547b7d35-eb41-41be-8aab-d0fc1623ee24" />
-| ![Zoom View] <img width="188" height="197" alt="image" src="https://github.com/user-attachments/assets/c86ba07e-fb26-4460-94a9-049c5b57458f" />|
+|<img width="486" height="353" alt="image" src="https://github.com/user-attachments/assets/547b7d35-eb41-41be-8aab-d0fc1623ee24" />|<img width="188" height="197" alt="image" src="https://github.com/user-attachments/assets/c86ba07e-fb26-4460-94a9-049c5b57458f" />|
 ---
 
 ## 🧪 BIST Verification Result
