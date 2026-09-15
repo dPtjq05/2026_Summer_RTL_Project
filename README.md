@@ -46,6 +46,10 @@ FPGA (Artix-7 / Cmod A7) 환경에서 12MHz 시스템 클럭을 기반으로 동
     |                              +------------------+  |
     +----------------------------------------------------+
 
+### 🔍 RTL Schematic (Vivado Elaborated Design)
+본 프로젝트의 Top-level 모듈 물리적 결선도입니다. UART 통신부, 프로토콜 변환 브릿지, AXI4-Lite 슬레이브 레지스터 뱅크 간의 내부 버스 라우팅을 명확히 확인할 수 있습니다.
+<img width="499" height="344" alt="image" src="https://github.com/user-attachments/assets/115439c4-55ec-4ec2-a899-2689578c7a2e" />
+
 ---
 
 ## 📋 Protocol & Memory Map Specification
@@ -82,7 +86,8 @@ FPGA (Artix-7 / Cmod A7) 환경에서 12MHz 시스템 클럭을 기반으로 동
 
 ### 1. STA 마진 확보를 위한 2-Block FSM & Zero-Latch Synthesis
 * 조합논리(`always @(*)`)와 순차논리(`always @(posedge clk)`)의 역할을 철저히 분리한 2-Block FSM 아키텍처를 적용하여 Combinational Cloud 깊이를 최소화했습니다.
-* 조합논리 블록 최상단에 Default Assignment 테크닉을 일괄 적용하여 미정의 경로에 따른 의도치 않은 Latch 합성을 100% 차단했습니다.
+* 조합논리 블록 최상단에 Default Assignment 테크닉을 일괄 적용하고, 레지스터 갱신 로직을 클럭 동기식 블록으로 완전히 분리하여 **Inferred Latch 합성을 100% 차단(Register as Latch: 0)하는 Zero-Latch 설계**를 달성했습니다.
+* 다중 드라이버 충돌(`multi-driven net`) 문제를 해결하여 모든 출력 포트(ex. `tx`)가 단일 순차 논리에서 제어되는 고신뢰성 글리치 억제 회로(Registered Output)를 구현했습니다.
 
 ### 2. AXI4-Lite 0-Latency Handshake & Zero-Skew 버스 구동
 * **Master (Bridge):** `AXI_WRITE` 상태 진입과 동시에 주소, 데이터, 유효 신호(`AWVALID`, `WVALID`)를 동일 클럭 에지에 인가(0-Skew)하여 버스 전송 효율을 극대화했습니다.
@@ -97,6 +102,34 @@ FPGA (Artix-7 / Cmod A7) 환경에서 12MHz 시스템 클럭을 기반으로 동
 * **Walking 1s (`0x00000001` $\rightarrow$ `0x01000000`):** 각 비트 라인의 Stuck-at-0 물리 결함 검출.
 * **Random Stress:** 임의 데이터 버스 부하 및 래치 안정성 100% PASS 검증.
 
+---
+
+## 📊 FPGA Resource Utilization & Timing Closure
+
+전체 시스템(`system_top`) 기준 Xilinx Vivado ML Edition (Target: Artix-7 `XC7A35T`) Implementation 결과입니다.
+
+### 1. Resource Utilization
+| Resource | Used | Available | Utilization (%) |
+| :--- | :---: | :---: | :---: |
+| **Slice LUTs** | 184 | 20,800 | 0.88% |
+| **Slice Registers (FF)** | 287 | 41,600 | 0.68% |
+| **Register as Latch** | **0** | - | **0% (Zero-Latch 달성)** |
+| **Bonded IOB** | 4 | 106 | 3.77% |
+
+### 2. Design Timing Summary (Target: 12MHz, $T=83.33\text{ns}$)
+XDC 제약 파일을 통한 시스템 클럭 12MHz 인가 후, Setup/Hold 타임 위반 없이 **Timing Closure**를 완벽하게 달성했습니다.
+
+* **WNS (Worst Negative Slack):** **+76.823 ns** (MET)
+* **WHS (Worst Hold Slack):** **+0.168 ns** (MET)
+* **Failing Endpoints:** 0
+* 
+### 3. Physical Implementation (Place & Route)
+전체 자원 점유율(0.88%)에 맞게 칩 우측 하단 클러스터에 로직이 최적화되어 밀집 배치된 것을 확인했습니다.
+
+| 칩 전체 조감도 (Full View) | 물리 배선 확대도 (Routing View) |
+| :---: | :---: |
+| ![Full View] <img width="486" height="353" alt="image" src="https://github.com/user-attachments/assets/547b7d35-eb41-41be-8aab-d0fc1623ee24" />
+| ![Zoom View] <img width="188" height="197" alt="image" src="https://github.com/user-attachments/assets/c86ba07e-fb26-4460-94a9-049c5b57458f" />|
 ---
 
 ## 🧪 BIST Verification Result
