@@ -44,9 +44,9 @@ module uart_tx(
     
     always@ (posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            tx <= 1'd1;
-            tx_busy <= 1'd0;
-        
+            //기존에 tx, tx_busy 신호도 리셋해주는 코드를 넣었지만 multi-driven pin error를 고치기 위해서 고침.
+            //tx, tx_busy 리셋 안해줘도 어차피 state 변하면 자연스럽게 변한다.
+            
             current_state <= IDLE;
             reg_data <= 8'd0;
             cnt_t <= 4'd0;
@@ -59,19 +59,16 @@ module uart_tx(
                 IDLE: begin
                     if (start) begin
                         cnt_d <= 3'd0;
-                        tx <= 1'd0;
-                        tx_busy <= 1'd1;
+                        
                         reg_data <= tx_data;
                     end
                     else begin
-                        tx <= 1'd1;
-                        tx_busy <= 1'd0;
+                        
                     end
                 end
                 
                 START: begin
-                    tx <= 1'd0;
-                    tx_busy <= 1'd1;
+                    
                     if (sampling_tick) begin
                         if (cnt_t == 4'd15) begin
                             cnt_t <= 4'd0;
@@ -105,7 +102,7 @@ module uart_tx(
                 end
                 
                 STOP: begin
-                    tx_busy <= 1'd1;
+                    
                     if (sampling_tick) begin
                         if (cnt_t == 4'd15) begin
                             cnt_t <= 4'd0;
@@ -125,17 +122,21 @@ module uart_tx(
         //combinational logic에서 의도치 않은 latch 생성을 막기 위함.
         case (current_state)
             IDLE: begin
+                tx_busy = 1'd0;
                 tx = 1'd1;
                 if (start) begin
                     next_state = START;
+                    tx = 1'd0;
                 end
                 else begin
                     next_state = IDLE;
+                    tx = 1'd1;
                 end
             end
             
             START: begin
                 tx = 1'd0;
+                tx_busy = 1'd1;
                 if(sampling_tick) begin
                     if (cnt_t == 4'd15) begin
                        next_state = DATA;
@@ -146,6 +147,7 @@ module uart_tx(
             DATA: begin
                 //-- LATCH를 방지하기 위함.
                 // 여기에 더 쓸 게 없나?
+                tx_busy = 1'd1;
                 tx = reg_data[cnt_d];
                 if(sampling_tick) begin
                     if ((cnt_t == 4'd15)&&(cnt_d == 3'd7)) begin
@@ -156,6 +158,7 @@ module uart_tx(
             
             STOP: begin
                 tx = 1'd1;
+                tx_busy = 1'd1;
                 if (sampling_tick) begin
                     if (cnt_t == 4'd15) begin
                         next_state = IDLE;

@@ -217,14 +217,25 @@ module bridge_uart_to_axi(
     end
     
     always@ (*) begin
-        m_axi_awprot = 3'd0;
-        m_axi_arprot = 3'd0;
-        m_axi_wstrb = 4'b1111;
         next_state = current_state;
+        tx_start =1'd0;
+        tx_data = 8'h0;
+    
+        m_axi_awaddr = 32'h0;
+        m_axi_awvalid = 1'd0;
+        m_axi_awprot = 3'd0;
+    
+        m_axi_wdata = 32'h0;
+        m_axi_wvalid = 1'd0;
+        m_axi_wstrb = 4'b1111;
+    
+        m_axi_bready = 1'd0;
+    
         m_axi_arvalid = 1'd0;
-        m_axi_rready = 1'd0;
-        tx_start = 1'd0;
-        tx_data = 8'h00;
+        m_axi_arprot =3'd0;
+        m_axi_araddr= 32'h0;
+    
+        m_axi_rready = 1'd1;
         case (current_state)
             IDLE: begin //state = 0;
                 if ((rx_done ==1'd1)&& ((rx_data==CMD_READ)||(rx_data == CMD_WRITE))) begin

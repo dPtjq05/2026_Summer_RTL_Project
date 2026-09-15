@@ -89,6 +89,10 @@ output reg [1:0] s_rresp
 
     always@ (posedge s_aclk or negedge s_arst_n) begin
         if (!s_arst_n) begin
+            dummy0 <= 32'h0000;
+            dummy1<= 32'h0000;
+            dummy2 <= 32'h0000;
+            dummy3 <= 32'h0000;
             w_current_state <= WIDLE;
             r_current_state <= RIDLE;
             
@@ -114,7 +118,6 @@ output reg [1:0] s_rresp
         
             case (w_current_state)
                 WIDLE: begin    //동시에 handshake가 발생하는 선행 조건을 추가해서 데이터를 버퍼에 저장하지 않고 바로 들어가도록 설계.
-                    
                     if (s_wvalid && s_wready && s_awvalid && s_awready) begin
                         buf_wdata <= s_wdata;
                         buf_wstrb <= s_wstrb;
@@ -261,33 +264,6 @@ output reg [1:0] s_rresp
             WRESP: begin
                 s_wready = 1'd0;    //fix: resp 과정 중에는 ready를 꺼야 함. 1로 계속 두면 잘못된 handshake가 발생할 수도 있음.
                 s_awready = 1'd0;
-                case (s_awaddr[3:2])
-                        2'b00: begin
-                            if (s_wstrb[0]) dummy0[7:0] <= s_wdata[7:0];
-                            if (s_wstrb[1]) dummy0[15:8] <= s_wdata[15:8];
-                            if (s_wstrb[2]) dummy0[23:16] <= s_wdata[23:16];
-                            if (s_wstrb[3]) dummy0[31:24] <= s_wdata[31:24];
-                        end
-                        2'b01: begin
-                            if (s_wstrb[0]) dummy1[7:0] <= s_wdata[7:0];
-                            if (s_wstrb[1]) dummy1[15:8] <= s_wdata[15:8];
-                            if (s_wstrb[2]) dummy1[23:16] <= s_wdata[23:16];
-                            if (s_wstrb[3]) dummy1[31:24] <= s_wdata[31:24];
-                        end
-                          
-                        2'b10: begin
-                            if (s_wstrb[0]) dummy2[7:0] <= s_wdata[7:0];
-                            if (s_wstrb[1]) dummy2[15:8] <= s_wdata[15:8];
-                            if (s_wstrb[2]) dummy2[23:16] <= s_wdata[23:16];
-                            if (s_wstrb[3]) dummy2[31:24] <= s_wdata[31:24];
-                        end
-                        2'b11:begin
-                            if (s_wstrb[0]) dummy3[7:0] <= s_wdata[7:0];
-                            if (s_wstrb[1]) dummy3[15:8] <= s_wdata[15:8];
-                            if (s_wstrb[2]) dummy3[23:16] <= s_wdata[23:16];
-                            if (s_wstrb[3]) dummy3[31:24] <= s_wdata[31:24];
-                        end
-                    endcase
                 
                 if (s_bready) begin //sequential logic으로 짜면 좀 더 안전한 타이밍 설계를 할 수 있지만 처음에 설계할 때 이 resp 상태를 고려하지 않은 구조로 짜서 그냥 combi로 짬.
                     w_next_state = WIDLE;
